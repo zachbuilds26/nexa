@@ -1,36 +1,104 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Nexa
 
-## Getting Started
+**Trade, earn, and borrow against tokenized stocks on BNB Smart Chain.**
 
-First, run the development server:
+Ninety-one US equities exist on BSC as ERC-20 tokens, priced around the clock
+even while the NASDAQ reference market is closed. Nexa is the
+self-custodial app for living on that market:
+
+- **Trade** - swap between bStocks and stables at live on-chain prices through
+  the Binance Web3 aggregator.
+- **Earn** - supply stables or bStocks to Venus and the Native pool, with every
+  venue ranked by live APY.
+- **Borrow** - post a stock as collateral, borrow USDT against it, and watch
+  your health factor in real time.
+
+Every action is a standard swap, approve, supply, or borrow signed by your own
+wallet. No new contracts, no custody, no lockups.
+
+## Quick start
 
 ```bash
+git clone <repo-url> nexa
+cd nexa
+npm install
+cp .env.local.example .env.local   # market data works with no keys
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open http://localhost:3000 and the full bStock universe is live before you
+connect anything. Connect **Binance Wallet** or any injected wallet to trade.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## How it works
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```
+┌─ Browser ────────────────────────────────────────────────────────────┐
+│  Next.js 16 (App Router, PPR + connection() streaming)               │
+│  TanStack Query (client data) · wagmi/viem (wallet + chain)          │
+└──────┬───────────────────────────────┬───────────────────────────────┘
+       │  fetch                        │  eth_call / sendTransaction
+       ▼                               ▼
+ /api/rwa/*  +  /api/binance           BSC RPC (bsc.publicnode.com)
+ route handlers, in-memory cache,      │
+ no-credentials proxy                  ├─► Venus   (lend · borrow · earn)
+       │                               ├─► Native  (earn pools)
+       ▼                               └─► ERC-20  (approvals · balances)
+ Binance RWA API + Web3 aggregator (bapi)
+ market data · reference prices · swap quotes
+```
 
-## Learn More
+- **Reads** are cached and proxied server-side (the upstream APIs have no CORS
+  and a shared rate limit).
+- **Writes** go straight from the wallet to the protocol contracts. The app
+  never holds keys or funds.
+- Market data is public: the app runs on an empty `.env.local`. The Binance
+  Web3 API keys only power the live round-trip cost on the home page.
 
-To learn more about Next.js, take a look at the following resources:
+## Environment
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```bash
+# .env.local.example
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+# Only needed for the home-page round-trip ticker (/api/binance proxy).
+# Get keys at https://web3.binance.com/en/dev-portal - everything else
+# works without them.
+BINANCE_WEB3_API_KEY=
+BINANCE_WEB3_SECRET_KEY=
 
-## Deploy on Vercel
+# Optional - overrides the public BSC RPC used for protocol reads
+NEXT_PUBLIC_BSC_RPC=https://bsc.publicnode.com
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+# Optional - canonical site URL for link previews (set automatically on Vercel)
+NEXT_PUBLIC_SITE_URL=
+```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Stack
+
+| Layer | Choice |
+|---|---|
+| Framework | Next.js 16 (App Router, `cacheComponents`) + TypeScript |
+| Styling | Tailwind CSS v4 tokens, Space Grotesk + Montserrat (self-hosted) |
+| Data | TanStack Query → `/api/rwa/*` + `/api/binance` proxies → Binance APIs |
+| Chain reads | viem + public BSC RPC (`https://bsc.publicnode.com`) |
+| Chain writes | wagmi v3 + injected/Binance Wallet connector |
+| Protocols | Binance Web3 aggregator (swaps), Venus + Native pool (earn/borrow) - no custom contracts |
+
+## Project layout
+
+```
+app/            routes + /api/rwa/* + /api/binance proxy handlers
+components/     layout/ (chrome), ui/ (primitives), trade|borrow|earn|portfolio|home|stock/
+lib/            rwa (data+cache), binanceTrade, venus, native, erc20, format, wagmi
+hooks/          protocol + live-data hooks (useVenus, useYield, useEarn, useRwa…)
+scripts/        one-off probes (venus enumeration, earn probe)
+docs/           FRICTION.md (DX report) · venus-enumeration.md · SCREENSHOTS/
+BUILD_PLAN.md   scope, workstreams, acceptance criteria
+```
+
+## Development
+
+- `npm run dev` - dev server (Turbopack)
+- `npm run lint` / `npx tsc --noEmit` / `npm run build` - verify before every commit
+- Trading, depositing, and borrowing need a wallet with BNB. Every page is fully
+  explorable read-only without one, and every action states why it is disabled
+  until a wallet is connected.

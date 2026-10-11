@@ -30,6 +30,9 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
+# server logs (prodserver/devserver output lives in the repo root)
+*.log
+
 # env files (can opt-in for committing if needed)
 .env*
 
@@ -39,3 +42,12 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# allow committing the env template
+!.env.local.example
+
+# screenshots & QA captures - never ship
+og-check.png
+/docs/SCREENSHOTS/
+public/*-preview.png
+public/trade-card.png

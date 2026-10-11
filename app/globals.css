@@ -1,26 +1,144 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-ink: #0a0b0d;
+  --color-surface-1: #0c0c0c;
+  --color-surface-2: #0d0d0d;
+  --color-surface-3: #15161a;
+  --color-surface-4: #1c1c20;
+  --color-surface-hover: #232328;
+  --color-fg: #e9e9ec;
+  --color-dim: #bfbfbf;
+  --color-accent: #86dc57;
+  --color-accent-hover: #9ce676;
+  --color-btn-grey: #262626;
+--color-up: #34d399;
+--color-down: #fb7185;
+--color-warn: #fcd34d;
+  --color-line: rgb(233 233 236 / 0.06);
+  --color-line-strong: rgb(233 233 236 / 0.08);
+  --color-fill: rgb(233 233 236 / 0.04);
+  --color-fill-strong: rgb(233 233 236 / 0.08);
+
+  --font-sans: "Sora", ui-sans-serif, system-ui, -apple-system,
+    "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+    "Liberation Mono", "Courier New", monospace;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html {
+  background-color: #0a0b0d;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #2a2b31 transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: #2a2b31;
+  border-radius: 3px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: #3a3b42;
+}
+
+*::-webkit-scrollbar-button {
+  display: none;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background-color: var(--color-ink);
+  color: var(--color-fg);
+  font-family: var(--font-sans);
+  font-weight: 500;
+}
+
+[class~="text-2xl"],
+[class~="text-3xl"],
+[class~="text-4xl"],
+[class~="text-5xl"],
+[class~="text-6xl"] {
+  font-family: "Montserrat", var(--font-sans);
+}
+
+::selection {
+  background: rgb(253 199 12 / 0.3);
+}
+
+:focus,
+:focus-visible {
+  outline: none;
+}
+
+.tnum {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Fine CRT-style texture for filled accent buttons: 1px black line every 2px
+   plus a faint 3px RGB subpixel tint. background-size drives the tile. */
+.scanlines {
+  background-image:
+    linear-gradient(rgba(0, 0, 0, 0) 50%, rgba(0, 0, 0, 0.18) 50%),
+    linear-gradient(
+      90deg,
+      rgba(255, 0, 0, 0.06),
+      rgba(0, 255, 0, 0.02),
+      rgba(0, 0, 255, 0.06)
+    );
+  background-size:
+    100% 2px,
+    3px 100%;
+}
+
+@keyframes hot-tape {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+@keyframes float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-16px);
+  }
+}
+
+@keyframes quote-dots {
+  0%,
+  70%,
+  100% {
+    opacity: 0.25;
+    transform: translateY(0);
+  }
+  35% {
+    opacity: 1;
+    transform: translateY(-3px);
+  }
+}
+
+.quote-dots > span:nth-child(1) {
+  animation: quote-dots 1.1s ease-in-out infinite;
+}
+.quote-dots > span:nth-child(2) {
+  animation: quote-dots 1.1s ease-in-out 0.18s infinite;
+}
+.quote-dots > span:nth-child(3) {
+  animation: quote-dots 1.1s ease-in-out 0.36s infinite;
 }
