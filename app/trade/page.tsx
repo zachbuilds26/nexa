@@ -111,7 +111,7 @@ function TradeInner({
         {panel === "swap" ? (
           <div className="mx-auto w-full max-w-[480px]">{swapCard}</div>
         ) : (
-          <div className="grid min-w-0 gap-5 lg:grid-cols-[420px_minmax(0,1fr)]">
+          <div className="grid min-w-0 items-start gap-5 lg:grid-cols-[420px_minmax(0,1fr)]">
             <div className="hidden min-w-0 lg:block">{swapCard}</div>
             <div className="min-w-0">{chartPanel}</div>
           </div>
