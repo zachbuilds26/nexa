@@ -51,3 +51,6 @@ og-check.png
 /docs/SCREENSHOTS/
 public/*-preview.png
 public/trade-card.png
+
+.vercel
+.env*

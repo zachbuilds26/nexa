@@ -3,7 +3,6 @@
 import { useMemo } from "react";
 import { useConnection } from "wagmi";
 import { USDT_BSC, USDC_BSC } from "@/lib/erc20";
-import { vTokensToUnderlying } from "@/lib/venus";
 import { formatUnits, unitsToNumber } from "@/lib/format";
 import { useUniverse, useDynamic } from "@/hooks/useRwa";
 import { useVenusMarkets, useVenusPosition } from "@/hooks/useVenus";
@@ -62,15 +61,16 @@ export function useEarnData() {
       if (s.amount <= 0n) continue;
       const m = venus.data.find((mk) => mk.vToken === s.vToken);
       if (!m || !m.underlying) continue;
-      const underlying = vTokensToUnderlying(s.amount, m.exchangeRate);
+      // position.data.supplied[].amount is already underlying units
+      // (fetchVenusPosition converts vTokens via exchangeRate).
       out.push({
         key: `venus:${m.underlyingSymbol.toLowerCase()}`,
         symbol: m.underlyingSymbol,
         token: m.underlying,
-        units: underlying,
+        units: s.amount,
         decimals: m.underlyingDecimals,
         usd:
-          unitsToNumber(underlying, m.underlyingDecimals) * (m.priceUsd ?? 1),
+          unitsToNumber(s.amount, m.underlyingDecimals) * (m.priceUsd ?? 1),
       });
     }
     return out;
