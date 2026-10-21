@@ -1,9 +1,5 @@
-// JSON-file store for admin state. One process, one file: reads are cheap,
-// writes go through a promise queue so two requests never interleave.
-
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
-import path from "node:path";
 import { newId } from "@/lib/auth";
+import { db, ensureSchema } from "@/lib/db";
 
 export type AdminNotification = {
   id: string;
@@ -33,145 +29,145 @@ type Db = {
   audit: AuditRow[];
 };
 
-const DATA_DIR = path.join(process.cwd(), "data");
-const DB_PATH = path.join(DATA_DIR, "db.json");
 const AUDIT_MAX = 500;
+const DEFAULT_SETTINGS: Settings = { maintenance: { enabled: false, message: "" } };
 
-// Same two entries the Nexa site ships in lib/notifications.ts, so the feed
-// does not change the first time the admin connects.
-const SEED: Db = {
-  notifications: [
-    {
-      id: "welcome",
-      title: "Welcome to Nexa",
-      body: "Your self-custodial desk for tokenized stocks on BNB Chain. Pick a stock and trade 24/7.",
-      at: Date.UTC(2026, 9, 10),
-    },
-    {
-      id: "auto-slippage",
-      title: "Smarter trade settings",
-      body: "Auto slippage now sizes itself from price impact, and expert mode skips the confirm step. Both live in the swap settings.",
-      at: Date.UTC(2026, 9, 15),
-    },
-  ],
-  settings: { maintenance: { enabled: false, message: "" } },
-  audit: [],
-};
+function timestamp(value: unknown): number {
+  return value instanceof Date ? value.getTime() : new Date(String(value)).getTime();
+}
 
-let queue: Promise<unknown> = Promise.resolve();
-
-function normalize(raw: unknown): Db | null {
-  if (!raw || typeof raw !== "object") return null;
-  const o = raw as Partial<Db>;
-  if (!Array.isArray(o.notifications) || !o.settings || typeof o.settings !== "object") return null;
-  const notifications = o.notifications.filter(
-    (n): n is AdminNotification =>
-      !!n &&
-      typeof n.id === "string" &&
-      typeof n.title === "string" &&
-      typeof n.body === "string" &&
-      typeof n.at === "number",
-  );
-  const m = (o.settings as Settings).maintenance;
-  const settings: Settings = {
+function parseSettings(value: unknown): Settings {
+  if (!value || typeof value !== "object") return DEFAULT_SETTINGS;
+  const maintenance = (value as Settings).maintenance;
+  return {
     maintenance: {
-      enabled: !!m?.enabled,
-      message: typeof m?.message === "string" ? m.message.slice(0, 400) : "",
+      enabled: !!maintenance?.enabled,
+      message: typeof maintenance?.message === "string" ? maintenance.message.slice(0, 400) : "",
     },
   };
-  const audit = Array.isArray(o.audit)
-    ? o.audit.filter((r): r is AuditRow => !!r && typeof r.id === "string" && typeof r.action === "string")
-    : [];
+}
+
+export async function getDb(): Promise<Db> {
+  const [notifications, settings, audit] = await Promise.all([
+    listNotifications(),
+    getSettings(),
+    listAudit(),
+  ]);
   return { notifications, settings, audit };
 }
 
-async function load(): Promise<Db> {
-  try {
-    const raw = JSON.parse(await readFile(DB_PATH, "utf8")) as unknown;
-    return normalize(raw) ?? SEED;
-  } catch {
-    return SEED;
-  }
-}
-
-async function persist(db: Db): Promise<void> {
-  await mkdir(DATA_DIR, { recursive: true });
-  const tmp = DB_PATH + ".tmp";
-  await writeFile(tmp, JSON.stringify(db, null, 2), "utf8");
-  await rename(tmp, DB_PATH);
-}
-
-/** Read-modify-write under a queue; returns the new db. */
-async function mutate<T>(fn: (db: Db) => T): Promise<T> {
-  const run = queue.then(async () => {
-    const db = await load();
-    const result = fn(db);
-    await persist(db);
-    return result;
-  });
-  queue = run.catch(() => undefined);
-  return run;
-}
-
-export function getDb(): Promise<Db> {
-  return load();
-}
-
 export async function listNotifications(): Promise<AdminNotification[]> {
-  const db = await load();
-  return [...db.notifications].sort((a, b) => b.at - a.at);
+  await ensureSchema();
+  const sql = db();
+  const rows = await sql`
+    select id, title, body, published_at
+    from notifications
+    order by published_at desc
+  `;
+  return rows.map((row) => ({
+    id: String(row.id),
+    title: String(row.title),
+    body: String(row.body),
+    at: timestamp(row.published_at),
+  }));
 }
 
-export async function createNotification(input: { title: string; body: string }): Promise<AdminNotification> {
-  return mutate((db) => {
-    const n: AdminNotification = { id: newId(), title: input.title, body: input.body, at: Date.now() };
-    db.notifications.push(n);
-    return n;
-  });
+export async function createNotification(input: {
+  title: string;
+  body: string;
+}): Promise<AdminNotification> {
+  await ensureSchema();
+  const sql = db();
+  const item = {
+    id: newId(),
+    title: input.title.slice(0, 120),
+    body: input.body.slice(0, 1000),
+  };
+  const rows = await sql`
+    insert into notifications (id, title, body)
+    values (${item.id}, ${item.title}, ${item.body})
+    returning published_at
+  `;
+  return { ...item, at: rows[0] ? timestamp(rows[0].published_at) : Date.now() };
 }
 
 export async function updateNotification(
   id: string,
   input: { title: string; body: string },
 ): Promise<AdminNotification | null> {
-  return mutate((db) => {
-    const n = db.notifications.find((x) => x.id === id);
-    if (!n) return null;
-    n.title = input.title;
-    n.body = input.body;
-    return n;
-  });
+  await ensureSchema();
+  const sql = db();
+  const rows = await sql`
+    update notifications
+    set title = ${input.title.slice(0, 120)}, body = ${input.body.slice(0, 1000)}
+    where id = ${id}
+    returning id, title, body, published_at
+  `;
+  const row = rows[0];
+  if (!row) return null;
+  return {
+    id: String(row.id),
+    title: String(row.title),
+    body: String(row.body),
+    at: timestamp(row.published_at),
+  };
 }
 
 export async function deleteNotification(id: string): Promise<boolean> {
-  return mutate((db) => {
-    const before = db.notifications.length;
-    db.notifications = db.notifications.filter((x) => x.id !== id);
-    if (db.notifications.length === before) return false;
-    return true;
-  });
+  await ensureSchema();
+  const sql = db();
+  const rows = await sql`delete from notifications where id = ${id} returning id`;
+  return rows.length > 0;
 }
 
 export async function getSettings(): Promise<Settings> {
-  const db = await load();
-  return db.settings;
+  await ensureSchema();
+  const sql = db();
+  const rows = await sql`select value from settings where key = 'maintenance' limit 1`;
+  return rows[0] ? parseSettings(rows[0].value) : DEFAULT_SETTINGS;
 }
 
 export async function saveSettings(next: Settings): Promise<Settings> {
-  return mutate((db) => {
-    db.settings = next;
-    return db.settings;
-  });
+  await ensureSchema();
+  const sql = db();
+  const maintenance = {
+    enabled: !!next.maintenance?.enabled,
+    message: typeof next.maintenance?.message === "string" ? next.maintenance.message.slice(0, 400) : "",
+  };
+  await sql`
+    insert into settings (key, value, updated_at)
+    values ('maintenance', ${JSON.stringify(maintenance)}::jsonb, now())
+    on conflict (key) do update set value = excluded.value, updated_at = now()
+  `;
+  return { maintenance };
 }
 
 export async function listAudit(): Promise<AuditRow[]> {
-  const db = await load();
-  return [...db.audit].sort((a, b) => b.at - a.at);
+  await ensureSchema();
+  const sql = db();
+  const rows = await sql`
+    select id, action, detail, created_at
+    from audit
+    order by created_at desc
+    limit ${AUDIT_MAX}
+  `;
+  return rows.map((row) => ({
+    id: String(row.id),
+    at: timestamp(row.created_at),
+    action: String(row.action),
+    detail: typeof row.detail === "string" ? row.detail.slice(0, 200) : "",
+  }));
 }
 
 export async function recordAudit(action: string, detail = ""): Promise<void> {
-  await mutate((db) => {
-    db.audit.unshift({ id: newId(), at: Date.now(), action, detail: detail.slice(0, 200) });
-    if (db.audit.length > AUDIT_MAX) db.audit.length = AUDIT_MAX;
-  });
+  await ensureSchema();
+  const sql = db();
+  await sql`
+    insert into audit (id, action, detail)
+    values (${newId()}, ${action.slice(0, 80)}, ${detail.slice(0, 200)})
+  `;
+  await sql`
+    delete from audit
+    where id not in (select id from audit order by created_at desc limit ${AUDIT_MAX})
+  `;
 }

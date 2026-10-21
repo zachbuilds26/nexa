@@ -1,8 +1,4 @@
-// Shared with the Nexa site: it appends, we read. JSONL keeps appends atomic
-// per line so a half-written tail line can never corrupt history.
-
-import { readFile, stat } from "node:fs/promises";
-import path from "node:path";
+import { db, ensureSchema } from "@/lib/db";
 
 export type ActivityRow = {
   /** unix ms */
@@ -15,45 +11,31 @@ export type ActivityRow = {
   ok: boolean;
 };
 
-// The Nexa app is the repo root next to this app; its data dir holds the log.
-const LOG_PATH = path.join(process.cwd(), "..", "data", "activity.jsonl");
 const MAX_ROWS = 500;
 
-function parseLine(line: string): ActivityRow | null {
-  try {
-    const o = JSON.parse(line) as Partial<ActivityRow>;
-    if (typeof o?.t !== "number" || !Number.isFinite(o.t)) return null;
-    if (o.kind !== "quote" && o.kind !== "swap" && o.kind !== "approve") return null;
-    return {
-      t: o.t,
-      kind: o.kind,
-      wallet: typeof o.wallet === "string" ? o.wallet.slice(0, 64) : "",
-      sell: typeof o.sell === "string" ? o.sell.slice(0, 64) : "",
-      buy: typeof o.buy === "string" ? o.buy.slice(0, 64) : "",
-      amount: typeof o.amount === "string" ? o.amount.slice(0, 40) : "",
-      ok: !!o.ok,
-    };
-  } catch {
-    return null; // torn tail line
-  }
-}
-
 export async function readActivity(limit = MAX_ROWS): Promise<ActivityRow[]> {
-  let raw: string;
-  try {
-    const info = await stat(LOG_PATH);
-    if (info.size > 2_000_000) return [];
-    raw = await readFile(LOG_PATH, "utf8");
-  } catch {
-    return []; // no activity yet
-  }
-  const rows: ActivityRow[] = [];
-  const lines = raw.split("\n");
-  for (let i = lines.length - 1; i >= 0 && rows.length < limit; i--) {
-    const line = lines[i]!.trim();
-    if (!line) continue;
-    const row = parseLine(line);
-    if (row) rows.push(row);
-  }
-  return rows;
+  await ensureSchema();
+  const sql = db();
+  const take = Math.min(Math.max(Math.floor(limit), 1), MAX_ROWS);
+  const rows = await sql`
+    select kind, wallet, sell, buy, amount, ok, created_at
+    from activity
+    order by created_at desc
+    limit ${take}
+  `;
+
+  return rows
+    .filter((row) => row.kind === "quote" || row.kind === "swap" || row.kind === "approve")
+    .map((row) => ({
+      t:
+        row.created_at instanceof Date
+          ? row.created_at.getTime()
+          : new Date(String(row.created_at)).getTime(),
+      kind: row.kind as ActivityRow["kind"],
+      wallet: typeof row.wallet === "string" ? row.wallet.slice(0, 64) : "",
+      sell: typeof row.sell === "string" ? row.sell.slice(0, 64) : "",
+      buy: typeof row.buy === "string" ? row.buy.slice(0, 64) : "",
+      amount: typeof row.amount === "string" ? row.amount.slice(0, 40) : "",
+      ok: !!row.ok,
+    }));
 }

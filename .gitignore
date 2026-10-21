@@ -43,9 +43,6 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-# allow committing the env template
-!.env.local.example
-
 # screenshots & QA captures - never ship
 *-check.png
 *-mobile.png
@@ -66,3 +63,13 @@ public/trade-card.png
 
 # private planning docs
 /BUILD_PLAN.md
+
+.env*
+# env templates are safe to commit
+!.env.local.example
+!/admin/.env.local.example
+
+# agent tooling installed by integrations
+/.agents/
+/.claude/
+/skills-lock.json

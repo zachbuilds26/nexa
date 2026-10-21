@@ -27,6 +27,7 @@ git clone https://github.com/zachbuilds26/nexa.git nexa
 cd nexa
 npm install
 cp .env.local.example .env.local
+# add DATABASE_URL from Neon (or run the Neon integration on Vercel)
 npm run dev
 ```
 
@@ -43,11 +44,12 @@ wallet (including Binance Wallet) to trade; WalletConnect appears when
 
 ## Environment
 
-Everything in `.env.local` is optional for read-only browsing. Live quotes and
-swaps need the Binance Web3 keys.
+Market data works without keys. Live quotes and swaps need the Binance Web3
+keys. Activity capture and the admin console need `DATABASE_URL`.
 
 | Variable | Purpose |
 |---|---|
+| `DATABASE_URL` | Neon Postgres connection string shared by the site and admin |
 | `BINANCE_WEB3_API_KEY` | Signs `/api/binance` quote, swap, and approve requests |
 | `BINANCE_WEB3_SECRET_KEY` | Secret paired with the key above |
 | `NEXT_PUBLIC_BSC_RPC` | Optional BSC RPC override; defaults to `https://bsc.publicnode.com` |
@@ -57,6 +59,9 @@ swaps need the Binance Web3 keys.
 
 The public RWA market-data endpoints do **not** use the Binance Web3 key. That
 key is only for the trading aggregator.
+
+On Vercel, install the Neon integration and connect it to the project. It
+injects `DATABASE_URL` into production, preview, and development automatically.
 
 ## Routes
 
@@ -86,6 +91,7 @@ Browser
     |-- /api/native      proxy for Native Pool endpoints
     |
     +-- BSC RPC ---> Lista, Venus, Native, ERC-20 contracts
+    +-- Neon Postgres ---> activity, notifications, settings, audit
 ```
 
 - **Reads** are proxied and cached server-side because the upstream APIs do not
@@ -103,6 +109,23 @@ Browser
   failures appear as `-`. Retrying the page can fill transient gaps; a missing
   upstream metric stays `-`.
 
+## Database
+
+Nexa stores operational state in Neon Postgres. The schema is created
+idempotently on the first database call, so there is no migration command to
+run. Both the site and admin use the same `DATABASE_URL`.
+
+| Table | Contents |
+|---|---|
+| `activity` | Quote, swap, approve, deposit, and borrow events |
+| `notifications` | Published feed shown in the site bell |
+| `settings` | Maintenance mode and seed markers |
+| `audit` | Admin logins, settings changes, and notification edits |
+
+Activity older than 90 days is pruned automatically; audit keeps the newest 500
+rows. The old local `data/activity.jsonl` and `admin/data/db.json` files are not
+read or migrated.
+
 ## Stack
 
 | Layer | Choice |
@@ -114,7 +137,8 @@ Browser
 | Market data | Binance RWA bapi + Binance spot tickers |
 | Trading | Binance Web3 aggregator |
 | Lending and yield | Lista Lending, Venus Core, Native Pool |
-| Admin | Separate Next.js console on port 3001 |
+| Persistence | Neon Postgres via `@neondatabase/serverless` |
+| Admin | Separate Next.js console on port 3001, sharing the same database |
 
 ## Project layout
 
@@ -122,7 +146,7 @@ Browser
 app/            App Router pages + /api/rwa/* + /api/binance + /api/native
 components/     layout/, ui/, trade/, borrow/, earn/, portfolio/, stock/, wallet/
 hooks/          data and protocol hooks
-lib/            RWA cache, spot tickers, protocol adapters, wagmi, formatting
+lib/            RWA cache, spot tickers, protocol adapters, wagmi, DB, formatting
 scripts/        logo refresh and one-off protocol probes
 docs/           DX notes and Venus market enumeration
 admin/          operations console (port 3001)
@@ -151,8 +175,9 @@ custom image, replace it with `app/opengraph-image.png` at the same size.
 
 ## Admin console
 
-`admin/` is a separate Next.js app on port 3001. It reads the site activity
-log, publishes the notification feed, and toggles the maintenance banner.
+`admin/` is a separate Next.js app on port 3001. It reads site activity from
+Postgres, publishes the notification feed, and toggles the maintenance banner.
+It must use the same `DATABASE_URL` as the root app.
 
 ```bash
 cd admin
@@ -165,6 +190,7 @@ Create `admin/.env.local` with:
 ```bash
 ADMIN_PASSWORD=
 SESSION_SECRET=
+DATABASE_URL=
 # Optional - defaults to http://localhost:3000
 NEXA_API_URL=
 ```
@@ -174,3 +200,10 @@ Open http://localhost:3001 and sign in with `ADMIN_PASSWORD`. Set
 enable the bell and maintenance banner on the site.
 
 Admin checks: `npm run typecheck` and `npm run build` from `admin/`.
+
+## Deployment
+
+The root app deploys to Vercel; the admin console is intentionally separate.
+Install the Neon integration on the Vercel project so `DATABASE_URL` is present
+for production, preview, and development builds, then run `vercel --prod` or
+push to the connected Git branch.
