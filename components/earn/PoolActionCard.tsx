@@ -9,7 +9,8 @@ import {
   useWaitForTransactionReceipt,
   useWriteContract,
 } from "wagmi";
-import { Check, ExternalLink, TriangleAlert, WalletCards } from "lucide-react";
+import { Check, ExternalLink, TriangleAlert } from "lucide-react";
+import { WalletFilled } from "@/components/ui/WalletFilled";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { AmountPill } from "@/components/ui/AmountPill";
@@ -223,7 +224,9 @@ export function PoolActionCard({ poolKey }: { poolKey: string }) {
   const insufficientLabel =
     tab === "deposit"
       ? `Insufficient ${selected?.symbol ?? "balance"}`
-      : "Nothing supplied yet";
+      : venusSupplied <= 0n
+        ? "Nothing supplied yet"
+        : "Not enough supplied";
 
   const approvalConfirming = approveMined && needsApprove;
   const txError =
@@ -523,8 +526,6 @@ export function PoolActionCard({ poolKey }: { poolKey: string }) {
     }
   }
 
-  const selectedBalance = walletBalance;
-
   return (
     <Card className="flex flex-col p-5 lg:flex-1">
       <div className="mb-4 grid grid-cols-2 gap-1 rounded-full border border-line bg-fill p-1">
@@ -533,7 +534,9 @@ export function PoolActionCard({ poolKey }: { poolKey: string }) {
             key={t.key}
             type="button"
             onClick={() => switchTab(t.key)}
-            className={`rounded-full px-2 py-1.5 text-xs transition-colors ${
+            aria-pressed={tab === t.key}
+            disabled={txBusy}
+            className={`rounded-full px-2 py-1.5 text-xs transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
               tab === t.key
                 ? "bg-accent/10 font-medium text-accent"
                 : "font-normal text-dim hover:text-fg"
@@ -613,7 +616,7 @@ export function PoolActionCard({ poolKey }: { poolKey: string }) {
               <span className="tnum">
                 {tab === "deposit"
                   ? `Bal ${
-                      balancesLoading ? "…" : balancesFailed ? "-" : formatUnits(selectedBalance, decimals, 4)
+                      balancesLoading ? "…" : balancesFailed ? "-" : formatUnits(walletBalance, decimals, 4)
                     }`
                   : selected?.venue === "venus"
                     ? `Supplied ${
@@ -635,6 +638,7 @@ export function PoolActionCard({ poolKey }: { poolKey: string }) {
               value={amount}
               onChange={(e) => handleAmount(e.target.value)}
               placeholder="0"
+              aria-label={tab === "deposit" ? "Amount to deposit" : "Amount to withdraw"}
               className="tnum h-9 w-full min-w-0 bg-transparent text-xl font-semibold text-fg outline-none placeholder:text-dim/40"
             />
             <span className="flex shrink-0 items-center gap-1.5">
@@ -758,7 +762,7 @@ export function PoolActionCard({ poolKey }: { poolKey: string }) {
             loading={txBusy}
           >
             {!isConnected ? (
-              <WalletCards className="h-4 w-4" strokeWidth={1.7} />
+              <WalletFilled className="h-5 w-5" />
             ) : null}
             {ctaLabel}
           </Button>

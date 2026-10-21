@@ -43,7 +43,9 @@ export async function ocFetch<T = unknown>(
     },
     body: body === undefined ? undefined : bodyStr,
     cache: "no-store",
+    signal: AbortSignal.timeout(15_000),
   });
 
+  if (!res.ok) throw new Error(`Binance Web3 API HTTP ${res.status}`);
   return (await res.json()) as OcResult<T>;
 }

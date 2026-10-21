@@ -44,7 +44,7 @@ export function MarketBadge({
       Market closed · on-chain trades 24/7
       <InfoTip
         align="right"
-        text="The underlying US market is closed, so swaps for this stock are paused until the next session. On-chain transfers of the token stay available 24/7."
+        text="The underlying US market is closed, so the NASDAQ reference price is frozen. This does not block swaps: on-chain trading continues 24/7 at the token's live price."
       />
     </span>
   );

@@ -60,7 +60,10 @@ type AllMarketRow = {
 };
 
 async function apiGet<T>(path: string): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, { cache: "no-store" });
+  const res = await fetch(`${API_BASE}${path}`, {
+    cache: "no-store",
+    signal: AbortSignal.timeout(10_000),
+  });
   if (!res.ok) throw new Error(`Lista API ${res.status} on ${path}`);
   const body = (await res.json()) as ApiEnvelope<T>;
   if (body.code !== "000000000" || body.data === undefined) {
@@ -209,16 +212,30 @@ export const MOOLAH_ACTION_ABI = [
   },
 ] as const;
 
-/** Morpho-style oracle: price of 1 collateral in loan units, scaled 1e36. */
-export const MORPHO_ORACLE_ABI = [
+/**
+ * Lista's shared price oracle adapter. peek(asset) returns the USD price of one
+ * whole token scaled 1e8 (Chainlink convention) - e.g. ~0.999e8 for a stable.
+ * There is no Morpho-style price() on these markets; the market price is the
+ * collateral/loan USD ratio (see oraclePriceRaw).
+ */
+export const LISTA_ORACLE_ABI = [
   {
     type: "function",
-    name: "price",
+    name: "peek",
     stateMutability: "view",
-    inputs: [],
+    inputs: [{ name: "asset", type: "address" }],
     outputs: [{ name: "", type: "uint256" }],
   },
 ] as const;
+
+/** Morpho-style market price: loan units per 1 collateral, scaled 1e36. */
+export function oraclePriceRaw(
+  collateralUsd: bigint,
+  loanUsd: bigint,
+): bigint {
+  if (collateralUsd <= 0n || loanUsd <= 0n) return 0n;
+  return (collateralUsd * 10n ** 36n) / loanUsd;
+}
 
 export type ListaMarketAccounting = {
   totalSupplyAssets: bigint;
@@ -230,7 +247,7 @@ export type ListaUserPosition = {
   collateral: bigint;
   borrowShares: bigint;
   debtAssets: bigint;
-  /** oracle.price(): loan units per 1 collateral, scaled 1e36. 0 = unread. */
+  /** Oracle-derived price: loan units per 1 collateral, scaled 1e36. 0 = unread. */
   priceRaw: bigint;
   /** HF in loan-unit terms: (collateral × price / 1e36) × lltv / debt. null = no debt. */
   healthFactor: number | null;
@@ -247,8 +264,8 @@ export function borrowSharesToAssets(
 
 /**
  * Health factor for an isolated Morpho-style market, entirely in loan units:
- * collateral valued via oracle.price() (loan per collateral, 1e36), times
- * LLTV, divided by outstanding debt. >= 1 healthy.
+ * collateral valued via the oracle-derived price (loan per collateral, 1e36),
+ * times LLTV, divided by outstanding debt. >= 1 healthy.
  */
 export function listaHealthFactor(
   collateral: bigint,

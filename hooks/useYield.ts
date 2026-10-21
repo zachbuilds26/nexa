@@ -23,8 +23,6 @@ export type YieldRow = {
   tvlUsd: number | null;
   /** Price of 1 token in USD (1 for the stables). */
   priceUsd: number | null;
-  /** Pool precision for balance amounts (Native reports 8 for every asset). */
-  balanceDecimals: number;
   depositEnabled: boolean;
   /** Venus rows: the market's vToken - resolves the market behind the row. */
   vToken?: `0x${string}`;
@@ -89,7 +87,6 @@ export function useYieldRows() {
         apyNote: "Live APR",
         tvlUsd: marketSizeUsd(m),
         priceUsd: m.priceUsd,
-        balanceDecimals: m.underlyingDecimals,
         depositEnabled: m.mintable,
         vToken: m.vToken,
       });
@@ -107,20 +104,20 @@ export function useYieldRows() {
       const stock = (universe.data ?? []).find(
         (s) => s.symbol.toUpperCase() === a.symbol,
       );
+      const noProjectedYield = a.projectedApy === 0;
       out.push({
         key: earnKey("native", a.symbol),
         venue: "native",
         symbol: a.symbol,
         token,
         decimals: stock?.decimals ?? 18,
-        apy: a.projectedApy,
-        apyNote: "Projected APY",
+        apy: noProjectedYield ? null : a.projectedApy,
+        apyNote: noProjectedYield ? "No projected yield" : "Projected APY",
         tvlUsd:
           priceUsd === null
             ? null
             : (unitsToNumber(a.tvlAtoms, a.balanceDecimals) || 0) * priceUsd,
         priceUsd,
-        balanceDecimals: a.balanceDecimals,
         depositEnabled: a.depositEnabled,
         withdrawPendingSeconds: a.withdrawPendingSeconds,
         instantFeeBps: a.instantFeeBps,

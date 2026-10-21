@@ -2,13 +2,15 @@ import { ImageResponse } from "next/og";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 
+export const alt =
+  "Nexa - trade, earn, and borrow against tokenized stocks on BNB Smart Chain";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
 const BG = "#0a0b0d";
 const FG = "#e9e9ec";
 const DIM = "#bfbfbf";
-const ACCENT = "#86dc57";
+const ACCENT = "#34eccc";
 const LINE = "rgba(233, 233, 236, 0.14)";
 const SURFACE = "#15161a";
 
@@ -83,7 +85,7 @@ export default async function Image() {
                 fontWeight: 700,
               }}
             >
-              S
+              N
             </div>
             <div style={{ fontSize: 34, fontWeight: 700, letterSpacing: -0.5 }}>
               Nexa

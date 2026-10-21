@@ -484,3 +484,63 @@ nothing.
   dvh math, no chrome offsets, and the count assertion (`rows fully visible at
   scrollTop 0 == 10 / 5`) is exact. The lesson stands for any future page that
   genuinely wants a viewport-filling app screen.
+
+
+## 32. Dev server exited silently right after boot - no FATAL, no exit reason, only [?25h
+- **Tried:** restarting dev after the header/footer restructure (kill port 3000, start cmd-hidden npm run dev, poll dev.log for the Local line, curl 11 routes).
+- **Cause:** unknown - the server printed Local, served /trade 200 and a burst of API traffic, then exited with only the terminal cursor-restore sequence ([?25h) and zero error lines; a full grep of the 4388-line log found no FATAL/panic/EADDR. Suspect a port-reuse race with the process killed in the same tool message as the start (a lint ran alongside it in parallel).
+- **Fix:** restart as ONE sequential command (kill, delete log, start, poll Ready, curl all routes, re-check Get-NetTCPConnection in the SAME tool call) - stable that time: 9/9 routes 200 and the listener still alive after the curls.
+- **Time lost:** ~7 min (the poll found the Local line, then 11 connection-refused failures before anyone read the log).
+- **Would help:** next dev printing a reason on any non-zero exit (even SIGTERM), so a dead listener never looks like a hung one.
+
+
+## 33. "unique key" warning only in the dev server console, from arrays you never render
+- **Tried:** searching every `.map(` for missing keys (none), enabling React dev warnings in Playwright, and finally binary-patching the compiled react-server-dom serializer to print the owner of each warning - it said `PrivacyPage`/`DocsPage` for items array blocks.
+- **Cause:** the RSC serializer validates element arrays passed as **props**, even if the client never renders them; React's DOM-style "JSX siblings don't need keys" exemption only covers direct children, not `items={[<>...</>]}`. The browser never saw the warning because it only fires during prerender (`owner=Prerender`, empty hint args), so build/dev browser consoles stayed clean while `next dev` spewed it.
+- **Fix:** wrap each element in `<Fragment key="iN">` and import `Fragment` from react (privacy 9 fragments, docs 9; terms items were plain strings and never warned). Verified 0 warnings across build, dev log, and 3 pages x 2 loads.
+- **Time lost:** ~40 min of grep-and-stare plus a diagnostics patch cycle (patches were restored from backups; 0 files left modified).
+- **Would help:** the hint args (`%s%s` after the message) actually being filled in - an empty "See https://react.dev/..." made the failing node unidentifiable from the message alone.
+
+
+## 34. Lazy Suspense hydration + a warm TanQuery cache = span/button mismatch that only fires on some loads
+- **Tried:** checking providers.tsx (clean useState QueryClient), reproducing with `--disable-extensions` (Badge came back environmental for the old issue), then adding a console interceptor that printed the exact two differing nodes: `<span>` (ssr="MUB") vs `<button>` (text=).
+- **Cause:** header `HeaderSearch` calls `useUniverse()` and can warm the query cache *before* `/trade`'s Suspense boundary hydrates; the deep-linked stock then flips `undefined -> MUB` between server snapshot (loading branch) and client first render (loaded branch), so text lands in a different DOM node.
+- **Fix:** in `SwapCard`, `useSyncExternalStore(() => true, () => false)` for a hydration gate; render the loading branch on `stockLoading || !hydrated`. Gate needed on BOTH pickers because the deep-link direction can be "sell".
+- **Time lost:** ~25 min (the mismatch is load-order dependent, so it vanished on reruns and looked like noise).
+- **Would help:** React printing which side (server/client) each hydration diff node came from in dev; the old `ssr=` marker made it obvious once captured programmatically.
+
+
+## 35. Overlay trapped in the header's stacking context - bottom nav painted on top of the sheet
+- **Tried:** raising the dialog to `z-[60]` (didn't help), then reading the box model: MobileNav is `fixed z-50` and a LATER sibling of the header, while the dialog lives *inside* the header's `fixed z-50` context - a child's z-index can't escape its parent's context, so equal z resolves by DOM order and MobileNav wins. The screenshot showed the nav bleeding through the sheet's bottom ~72px.
+- **Cause:** classic CSS stacking-context trap, made invisible by test frameworks: Playwright `isVisible()` only checks attachment + bounding box, so the covered nav still "passed".
+- **Fix:** `createPortal(overlay, document.body)` so the backdrop/dialog are body-level (portal is appended after MobileNav, same z wins by order; dialog z-60 clears it). Safe without a mount guard because `open` starts false and can only flip via client-side events, so SSR never touches `document`. Verifications added: dialog box `y+height >= viewport-16` and `document.elementFromPoint(bottom-center)` must be inside the dialog.
+- **Time lost:** ~15 min (caught in screenshot review, not by any assertion - which is why the two geometric checks now exist).
+- **Would help:** browsers flagging any element painted outside its stacking context by a same-z later sibling; or Playwright exposing an occlusion check.
+
+
+## 36. A click before React hydration is a silent no-op - test helpers need retry loops, and crashes need streaming output
+- **Tried:** chasing "flaky" suite failures where the search palette or cookie banner stayed un-toggled despite Playwright reporting the click as successful; then noticing an end-of-run summary that hid WHERE the script died.
+- **Cause:** Playwright considers an element clickable the moment it is attached with a bounding box - which can be BEFORE React attaches handlers, so the click lands on a dead node and nothing happens. On top of that, a script crash discarded every pending check from the end-of-run report, turning one real signal into apparent random flakiness.
+- **Fix:** (1) `openSearch`/`dismissBanner` helpers now loop for up to 2500ms - wait visible, click, re-check the expected post-condition, retry; (2) checks print PASS/FAIL as they stream instead of only in the final tally, so a mid-run crash still shows the last green check.
+- **Time lost:** ~20 min (diagnosed as "sometimes the button doesn't work" before realizing the button genuinely had no listeners yet).
+- **Would help:** Playwright flagging clicks on nodes with no event listeners (a `clickNoHandler` warning), or an explicit `hydrationStatus` signal to await before interacting.
+
+
+## 37. Hydration "mismatch" on /trade that only fires on the first dev-server run after a (re)start - and whose culprit is invisible everywhere you look
+- **Tried:** when the warning ("attributes of the server rendered HTML didn't match", stack topped by Next's SegmentView devtools nodes) kept appearing on the first suite run after every dev restart, we (1) unsliced the suite's console capture so the full React diff prints, (2) read React's own hydration diff code (`diffHydratedStyles` in react-dom-client.development.js) to learn the `-`/`+` markers mean server/DOM vs client tree, (3) grepped our source, every dependency bundle, and Next's dist for anything writing `caretColor`/`caret-color` (zero hits), (4) curled the served HTML (no style attribute on the input, ever), (5) ran a MutationObserver init-script probe under the exact firing recipe (3 fresh+reload cycles: no style mutations caught), and (6) started `next start` on :3100 and probed prod with the same fresh+dismiss+reload flow ×3 (zero console errors - prod is fully clean).
+- **Cause:** never fully pinned. Established facts: the DOM node carries `style="caret-color: transparent"` between parse and hydration while our JSX has no style prop and the served HTML has no style attribute; React's `- style={{caret-color:"transparent"}}` line with no matching `+` line means "attribute on the server/DOM side only". Something mutates the input pre-hydration in dev after a cold (re)start, is not our code, not our deps, not Next's dist, not an observed DOM write, and does not exist in production (SegmentView nodes themselves are `NODE_ENV !== 'production'` only).
+- **Fix:** (1) suite filter scoped to exactly this flake - hydration warnings that mention caret-color are ignored, with a comment; any other hydration mismatch (text content, other attributes) still fails the check; (2) suite console hook now prints hydration messages UNSLICED so a recurrence shows the full component stack; (3) probes (probe-hyddiff.mjs observer, probe-segv.mjs loop) kept as tripwires. Verified under the firing recipe (restart + warm curls + suite): warning recorded once, check passes, 75/75.
+- **Time lost:** ~75 min (mostly reading React's hydration internals + the dead-end greps; the decisive insight was the unsliced stack showing the exact input and prop).
+- **Would help:** React's diff printing BOTH sides for every differing prop (the missing `+ style=null` line made direction ambiguous for far too long); Next tagging devtools frames in stacks so framework frames are greppable; browsers flagging pre-hydration DOM mutations with the mutator's stack.
+## 38. Dev server enters a silent "dead clicks" state: hydration stalls with zero errors, breaking every interactive check
+- **Tried:** a full suite run failed with the palette and the new wallet modal refusing to open, while the same markup passed minutes earlier. Probes showed React props/fibers attached to the trigger button, zero console errors, zero page errors, zero failed requests - but neither onClick nor the window keydown ("/") path did anything. The dev log showed an unexplained storm of "Fast Refresh rebuilding" with nobody editing files, and a warning that Next ignored `pnpm-lock.yaml` in the user profile because it sat outside the git repo.
+- **Cause:** mis-scoped Turbopack file watcher. Without `turbopack.root`, Next fell back to a parent directory (drawn by a stray `C:\Users\Emmanuel\pnpm-lock.yaml`) and watched far beyond the repo, so writes anywhere under the profile (probe scripts, logs, screenshots) triggered rebuild storms; a page loading mid-storm commits nothing - hydration silently stalls, no error surfaces, and every handler is dead until a clean restart.
+- **Fix:** pinned `turbopack.root: import.meta.dirname` in next.config.ts. The pnpm-lock warning disappeared, rebuild storms stopped, and the full suite (now 81 checks: tokens-only palette, wallet modal, mobile drawers) passed twice in a row without restarts.
+- **Time lost:** ~40 min (misdiagnosed as a component bug first - needed three probes to separate "no hydration" from "hydration mismatch").
+- **Would help:** Next warning loudly when the watcher root escapes the repo, or when a page's hydration commit is starved by an in-flight rebuild ("this page never hydrated" after N seconds would have named the failure instantly).
+## 39. Own rate limiter set below own client fan-out - every first /stocks visit self-429ed half the 1h-kline pump
+- **Tried:** the suite's "no page errors" check kept failing on /stocks with a storm of 429s on /api/rwa/kline (65+ unique addresses), first written off as transient upstream (Binance bapi) throttling - waiting and rerunning never cleared it, and the route maps upstream failures to 502, so a 429 could only come from OUR limiter.
+- **Cause:** the kline route capped clients at 30 req/60s (to protect the shared bapi quota), but the 1h-change column is filled by a client-side pump that does one `interval=1h&limit=2` request per address for the whole ~90-token universe on the first visit (4 workers). A single legitimate /stocks visit therefore fired ~70 requests, so everything past #30 in the sliding window was rejected by our own route. The pump caches a failed address as null for the session, so the column silently showed "-" and the browser console logged the 429s - the limit was sized against abuse, not against the app's own worst-case fan-out.
+- **Fix:** raised the kline limiter to 150 req/60s - clears a full-universe burst plus detail-page charts, while upstream stays protected by the 60s server cache and the finite (bounded) universe. Verified: the /stocks fan-out completes with zero 429s in a full suite run.
+- **Time lost:** ~15 min (misdiagnosed as transient twice before counting the requests in the suite log and realizing our own limiter was the source).
+- **Would help:** the limiter being derivable from a route's known client fan-out (a per-route "expected burst" annotation), or dev-mode logs when a request is blocked so the block is visible server-side instead of only as a browser console 429.

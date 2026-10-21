@@ -1,10 +1,11 @@
 "use client";
 
-import { InfoTip } from "@/components/ui/InfoTip";
+import { TipLabel } from "@/components/ui/InfoTip";
 
 /**
- * Health factor meter - plan §4.2 "Health meter": bar green → amber → red, label "HF 1.85".
- * HF math lives in lib/venus.ts (healthFactorFrom) - this component only renders it.
+ * Health factor meter: bar green → amber → red, label "HF 1.85".
+ * HF math lives in lib/venus.ts (healthFactorFrom) and lib/lista.ts
+ * (listaHealthFactor) - this component only renders it.
  *   HF ≥ 1.50 → green, 1.30–1.50 → amber, < 1.30 (or underwater) → red.
  */
 export function HealthMeter({
@@ -24,8 +25,10 @@ export function HealthMeter({
     <div className={className}>
       <div className="mb-1.5 flex items-center justify-between text-xs">
         <span className="flex items-center gap-1 text-dim">
-          Health factor
-          <InfoTip text="Collateral against your debt. Below 1.00 your position can be liquidated. Above 1.50 is comfortable." />
+          <TipLabel
+            label="Health factor"
+            text="Collateral against your debt. Below 1.00 your position can be liquidated. Above 1.50 is comfortable."
+          />
         </span>
         <span
           className={`tnum font-semibold ${

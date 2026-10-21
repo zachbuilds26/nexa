@@ -2,103 +2,175 @@
 
 **Trade, earn, and borrow against tokenized stocks on BNB Smart Chain.**
 
-Ninety-one US equities exist on BSC as ERC-20 tokens, priced around the clock
-even while the NASDAQ reference market is closed. Nexa is the
-self-custodial app for living on that market:
+Tokenized US equities trade on BSC as ERC-20 tokens. Nexa is the
+self-custodial app for living on that market: prices and swaps stay live around
+the clock, even while the NASDAQ reference market is closed.
 
-- **Trade** - swap between bStocks and stables at live on-chain prices through
-  the Binance Web3 aggregator.
-- **Earn** - supply stables or bStocks to Venus and the Native pool, with every
-  venue ranked by live APY.
-- **Borrow** - post a stock as collateral, borrow USDT against it, and watch
-  your health factor in real time.
+- **Trade** - swap between bStocks and stables through the Binance Web3
+  aggregator, with live quotes and wallet-signed approvals.
+- **Earn** - supply stables or bStocks to Venus and the Native pool, ranked by
+  live APR or projected APY.
+- **Borrow** - post a bStock as collateral on Lista Lending, borrow USDT
+  against it, and watch the health factor update.
+- **Portfolio** - wallet balances, borrow positions, and earn deposits in one
+  net-worth view.
 
-Every action is a standard swap, approve, supply, or borrow signed by your own
-wallet. No new contracts, no custody, no lockups.
+Nexa deploys no custom contracts and never holds funds. Every write is a
+standard swap, approve, supply, or borrow signed by your own wallet.
 
 ## Quick start
 
+Requires Node.js 20.9 or newer.
+
 ```bash
-git clone <repo-url> nexa
+git clone https://github.com/zachbuilds26/nexa.git nexa
 cd nexa
 npm install
-cp .env.local.example .env.local   # market data works with no keys
+cp .env.local.example .env.local
 npm run dev
 ```
 
-Open http://localhost:3000 and the full bStock universe is live before you
-connect anything. Connect **Binance Wallet** or any injected wallet to trade.
+On PowerShell, copy the environment file with:
 
-## How it works
-
-```
-┌─ Browser ────────────────────────────────────────────────────────────┐
-│  Next.js 16 (App Router, PPR + connection() streaming)               │
-│  TanStack Query (client data) · wagmi/viem (wallet + chain)          │
-└──────┬───────────────────────────────┬───────────────────────────────┘
-       │  fetch                        │  eth_call / sendTransaction
-       ▼                               ▼
- /api/rwa/*  +  /api/binance           BSC RPC (bsc.publicnode.com)
- route handlers, in-memory cache,      │
- no-credentials proxy                  ├─► Venus   (lend · borrow · earn)
-       │                               ├─► Native  (earn pools)
-       ▼                               └─► ERC-20  (approvals · balances)
- Binance RWA API + Web3 aggregator (bapi)
- market data · reference prices · swap quotes
+```powershell
+Copy-Item .env.local.example .env.local
 ```
 
-- **Reads** are cached and proxied server-side (the upstream APIs have no CORS
-  and a shared rate limit).
-- **Writes** go straight from the wallet to the protocol contracts. The app
-  never holds keys or funds.
-- Market data is public: the app runs on an empty `.env.local`. The Binance
-  Web3 API keys only power the live round-trip cost on the home page.
+Open http://localhost:3000. The root redirects to `/trade/swap`. The full
+bStock universe is readable before you connect a wallet. Connect an injected
+wallet (including Binance Wallet) to trade; WalletConnect appears when
+`NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID` is set.
 
 ## Environment
 
-```bash
-# .env.local.example
+Everything in `.env.local` is optional for read-only browsing. Live quotes and
+swaps need the Binance Web3 keys.
 
-# Only needed for the home-page round-trip ticker (/api/binance proxy).
-# Get keys at https://web3.binance.com/en/dev-portal - everything else
-# works without them.
-BINANCE_WEB3_API_KEY=
-BINANCE_WEB3_SECRET_KEY=
+| Variable | Purpose |
+|---|---|
+| `BINANCE_WEB3_API_KEY` | Signs `/api/binance` quote, swap, and approve requests |
+| `BINANCE_WEB3_SECRET_KEY` | Secret paired with the key above |
+| `NEXT_PUBLIC_BSC_RPC` | Optional BSC RPC override; defaults to `https://bsc.publicnode.com` |
+| `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID` | Optional WalletConnect connector |
+| `NEXT_PUBLIC_SITE_URL` | Canonical site URL for link previews and OG metadata |
+| `NEXT_PUBLIC_ADMIN_URL` | Admin console origin for the notification bell and maintenance banner |
 
-# Optional - overrides the public BSC RPC used for protocol reads
-NEXT_PUBLIC_BSC_RPC=https://bsc.publicnode.com
+The public RWA market-data endpoints do **not** use the Binance Web3 key. That
+key is only for the trading aggregator.
 
-# Optional - canonical site URL for link previews (set automatically on Vercel)
-NEXT_PUBLIC_SITE_URL=
+## Routes
+
+| Route | What it does |
+|---|---|
+| `/trade/swap` | Quote and execute a swap |
+| `/trade/chart` | Full-size bStock chart |
+| `/stocks` | Sortable bStock universe |
+| `/stocks/[address]` | Stock detail, chart, market status, and fundamentals |
+| `/earn/pools` | Venus and Native pools ranked by live yield |
+| `/earn/deposits` | Your earn positions |
+| `/earn/[key]` | Pool detail and deposit or withdraw flow |
+| `/borrow/markets` | Lista markets and borrow rates |
+| `/borrow/positions` | Your borrow accounts and health factors |
+| `/borrow/lista/[id]` | Lista market detail |
+| `/portfolio` | Wallet, borrow, and earn totals |
+| `/docs`, `/privacy`, `/terms` | Product documentation and policies |
+
+## How it works
+
+```text
+Browser
+  Next.js App Router + TanStack Query + wagmi/viem
+    |
+    |-- /api/rwa/*       server-side cache for Binance RWA market data
+    |-- /api/binance     signed Binance Web3 aggregator proxy
+    |-- /api/native      proxy for Native Pool endpoints
+    |
+    +-- BSC RPC ---> Lista, Venus, Native, ERC-20 contracts
 ```
+
+- **Reads** are proxied and cached server-side because the upstream APIs do not
+  expose browser-friendly CORS headers.
+- **Writes** go directly from the wallet to the protocol contracts.
+- **Market data** comes from Binance public RWA and spot endpoints. The Web3
+  API key is used only for aggregator quotes and swaps.
+
+### Data notes
+
+- 24h price, change, and volume come from batched Binance spot tickers.
+- 1h change comes from per-token bapi candles; market cap and fundamentals come
+  from per-token bapi dynamic data.
+- Binance does not publish every metric for every bStock, and transient bapi
+  failures appear as `-`. Retrying the page can fill transient gaps; a missing
+  upstream metric stays `-`.
 
 ## Stack
 
 | Layer | Choice |
 |---|---|
-| Framework | Next.js 16 (App Router, `cacheComponents`) + TypeScript |
-| Styling | Tailwind CSS v4 tokens, Space Grotesk + Montserrat (self-hosted) |
-| Data | TanStack Query → `/api/rwa/*` + `/api/binance` proxies → Binance APIs |
-| Chain reads | viem + public BSC RPC (`https://bsc.publicnode.com`) |
-| Chain writes | wagmi v3 + injected/Binance Wallet connector |
-| Protocols | Binance Web3 aggregator (swaps), Venus + Native pool (earn/borrow) - no custom contracts |
+| Framework | Next.js 16 App Router with `cacheComponents`, React 19, TypeScript |
+| Styling | Tailwind CSS v4 tokens; Sora and Montserrat via Fontsource |
+| Client data | TanStack Query |
+| Wallet and chain | wagmi, viem, injected connectors, optional WalletConnect |
+| Market data | Binance RWA bapi + Binance spot tickers |
+| Trading | Binance Web3 aggregator |
+| Lending and yield | Lista Lending, Venus Core, Native Pool |
+| Admin | Separate Next.js console on port 3001 |
 
 ## Project layout
 
-```
-app/            routes + /api/rwa/* + /api/binance proxy handlers
-components/     layout/ (chrome), ui/ (primitives), trade|borrow|earn|portfolio|home|stock/
-lib/            rwa (data+cache), binanceTrade, venus, native, erc20, format, wagmi
-hooks/          protocol + live-data hooks (useVenus, useYield, useEarn, useRwa…)
-scripts/        one-off probes (venus enumeration, earn probe)
-docs/           FRICTION.md (DX report) · venus-enumeration.md · SCREENSHOTS/
-BUILD_PLAN.md   scope, workstreams, acceptance criteria
+```text
+app/            App Router pages + /api/rwa/* + /api/binance + /api/native
+components/     layout/, ui/, trade/, borrow/, earn/, portfolio/, stock/, wallet/
+hooks/          data and protocol hooks
+lib/            RWA cache, spot tickers, protocol adapters, wagmi, formatting
+scripts/        logo refresh and one-off protocol probes
+docs/           DX notes and Venus market enumeration
+admin/          operations console (port 3001)
 ```
 
 ## Development
 
-- `npm run dev` - dev server (Turbopack)
-- `npm run lint` / `npx tsc --noEmit` / `npm run build` - verify before every commit
-- Trading, depositing, and borrowing need a wallet with BNB. Every page is fully
-  explorable read-only without one, and every action states why it is disabled
-  until a wallet is connected.
+```bash
+npm run dev
+npm run lint
+npx tsc --noEmit
+npm run build
+```
+
+`node scripts/fetch-logos.mjs` refreshes `public/tokens/`. Probe scripts read the
+universe endpoint on port 3000; set `UNIVERSE_URL` to point elsewhere.
+
+Trading, depositing, and borrowing need a wallet with BNB. Every page is fully
+explorable read-only without one, and every action states why it is disabled
+until a wallet is connected.
+
+## Social preview
+
+The OG image is generated by `app/opengraph-image.tsx` at 1200x630. To use a
+custom image, replace it with `app/opengraph-image.png` at the same size.
+
+## Admin console
+
+`admin/` is a separate Next.js app on port 3001. It reads the site activity
+log, publishes the notification feed, and toggles the maintenance banner.
+
+```bash
+cd admin
+npm install
+npm run dev
+```
+
+Create `admin/.env.local` with:
+
+```bash
+ADMIN_PASSWORD=
+SESSION_SECRET=
+# Optional - defaults to http://localhost:3000
+NEXA_API_URL=
+```
+
+Open http://localhost:3001 and sign in with `ADMIN_PASSWORD`. Set
+`NEXT_PUBLIC_ADMIN_URL=http://localhost:3001` in the root `.env.local` to
+enable the bell and maintenance banner on the site.
+
+Admin checks: `npm run typecheck` and `npm run build` from `admin/`.

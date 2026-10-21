@@ -1,4 +1,5 @@
-import { InfoTip } from "@/components/ui/InfoTip";
+import { ArrowDownWideNarrow, ArrowUpNarrowWide, ChevronsUpDown } from "lucide-react";
+import { TipLabel } from "@/components/ui/InfoTip";
 
 export type SortCol = string;
 
@@ -7,6 +8,7 @@ export function SortHeader({
   label,
   col,
   active,
+  dir = "desc",
   onSort,
   align = "right",
   className = "",
@@ -23,6 +25,7 @@ export function SortHeader({
 }) {
   return (
     <th
+      aria-sort={active ? (dir === "asc" ? "ascending" : "descending") : "none"}
       className={`px-4 pb-2 font-medium ${
         align === "right" ? "text-right" : "text-left"
       } ${className}`}
@@ -34,8 +37,21 @@ export function SortHeader({
           active ? "text-fg" : "text-dim"
         }`}
       >
-        {label}
-        {tip ? <InfoTip text={tip} align={align === "right" ? "right" : "left"} /> : null}
+        <TipLabel
+          interactive={false}
+          label={label}
+          text={tip}
+          align={align === "right" ? "right" : "left"}
+        />
+        {active ? (
+          dir === "asc" ? (
+            <ArrowUpNarrowWide className="h-3.5 w-3.5 -scale-x-100" strokeWidth={1.7} aria-hidden />
+          ) : (
+            <ArrowDownWideNarrow className="h-3.5 w-3.5 -scale-x-100" strokeWidth={1.7} aria-hidden />
+          )
+        ) : (
+          <ChevronsUpDown className="h-3.5 w-3.5 opacity-60" strokeWidth={1.7} aria-hidden />
+        )}
       </button>
     </th>
   );

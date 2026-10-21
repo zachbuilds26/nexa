@@ -150,13 +150,19 @@ export function PoolInfoPanel({
     <div className={className}>
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
         <ContextStat
-          label="APY"
+          label={selected.apyNote}
           value={
             selected.apy === null
               ? "-"
               : `${fmtNumTrim(selected.apy * 100, 2)}%`
           }
-          tip="Live annualized yield paid by the lending market. It moves with utilization, so it is not a fixed promise."
+          tip={
+            selected.venue === "venus"
+              ? "Live annualized supply rate paid by the lending market. It moves with utilization, so it is not a fixed promise."
+              : selected.apyNote === "No projected yield"
+                ? "The pool currently projects no distribution for this asset."
+                : "Latest pool distribution annualized. It moves with pool performance, so it is not a fixed promise."
+          }
         />
         <ContextStat
           label="TVL"
@@ -166,7 +172,6 @@ export function PoolInfoPanel({
         <ContextStat
           label="In wallet"
           value={walletBalStat}
-          tip="Your wallet balance of this asset, not yet deposited into the pool."
         />
       </div>
 

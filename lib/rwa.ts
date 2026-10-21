@@ -76,6 +76,7 @@ async function cachedFetch<T>(path: string, ttlMs: number): Promise<T> {
         const res = await fetch(`${BINANCE}${path}`, {
           headers: BAPI_HEADERS,
           cache: "no-store",
+          signal: AbortSignal.timeout(10_000),
         });
         if (!res.ok) throw new Error(`bapi ${res.status} for ${path}`);
         const json = (await res.json()) as Envelope<T>;
@@ -207,15 +208,4 @@ export async function getMeta(address: string): Promise<TokenMeta> {
   );
 
   return { name: data.name || data.description || null };
-}
-
-/**
- * Shares per token - grows automatically as dividends are applied on-chain.
- * Never trust a cached multiplier across days.
- */
-export function sharePrice(tokenPrice: string, multiplier: string): number {
-  const t = Number(tokenPrice);
-  const m = Number(multiplier);
-  if (!Number.isFinite(t) || !Number.isFinite(m) || m === 0) return NaN;
-  return t / m;
 }

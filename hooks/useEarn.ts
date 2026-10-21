@@ -25,7 +25,7 @@ export type EarnVenusItem = {
   token: `0x${string}`;
   units: bigint;
   decimals: number;
-  usd: number;
+  usd: number | null;
 };
 
 /**
@@ -70,12 +70,15 @@ export function useEarnData() {
         units: s.amount,
         decimals: m.underlyingDecimals,
         usd:
-          unitsToNumber(s.amount, m.underlyingDecimals) * (m.priceUsd ?? 1),
+          m.priceUsd !== null && m.priceUsd > 0
+            ? unitsToNumber(s.amount, m.underlyingDecimals) * m.priceUsd
+            : null,
       });
     }
     return out;
   }, [position.data, venus.data]);
-  const venusLentUsd = venusItems.reduce((s, i) => s + i.usd, 0);
+  const venusLentUsd = venusItems.reduce((s, i) => s + (i.usd ?? 0), 0);
+  const venusPriceMissing = venusItems.some((i) => i.usd === null);
 
   const assetsById = useMemo(
     () => new Map((nativeConfig.data?.assets ?? []).map((a) => [a.assetId, a])),
@@ -132,11 +135,13 @@ export function useEarnData() {
       (venus.isLoading ||
         position.isLoading ||
         nativeConfig.isLoading ||
-        nativeAccount.isLoading),
+        nativeAccount.isLoading ||
+        (needsQqqbPrice && qqqbDynamic.isLoading)),
     venusItems,
     venusLentUsd,
     nativeItems,
     earnUsd,
+    hasUnpriced: venusPriceMissing || qqqbPriceMissing,
     refetch: () => {
       void position.refetch();
       void nativeAccount.refetch();

@@ -15,6 +15,10 @@ export function useUniverse() {
       return json.data;
     },
     staleTime: 60 * 60 * 1000,
+    // staleTime (1h) outlives the default gcTime (5min) - without a long
+    // gcTime the universe cache is dropped while still fresh and every
+    // return to a page re-fetches all 90+ tokens.
+    gcTime: 24 * 60 * 60 * 1000,
   });
 }
 
@@ -30,13 +34,13 @@ export function useDynamic(address: string | undefined) {
 
 /** Shared fetcher - also used with useQueries for a set of held tokens. */
 export async function fetchDynamic(address: string): Promise<Dynamic> {
-  const res = await fetch(`/api/rwa/dynamic?address=${address}`);
+  const res = await fetch(`/api/rwa/dynamic?address=${encodeURIComponent(address)}`);
   const json = (await res.json()) as { ok: boolean; data: Dynamic; error?: string };
   if (!json.ok) throw new Error(json.error ?? "price failed");
   return json.data;
 }
 
-/** One query for all 91 prices - batched spot tickers keyed by pair (cs). */
+/** One query for all bStock prices - batched spot tickers keyed by pair (cs). */
 export function useTickers() {
   return useQuery({
     queryKey: ["rwa-tickers"],
@@ -68,19 +72,20 @@ export function useMarketStatus() {
   });
 }
 
-export type KlineRow = [number, number, number, number, number, number, number];
+type KlineRow = [number, number, number, number, number, number, number];
 
 export function useMeta(address: string | undefined) {
   return useQuery({
     queryKey: ["rwa-meta", address],
     queryFn: async (): Promise<TokenMeta> => {
-      const res = await fetch(`/api/rwa/meta?address=${address}`);
+      const res = await fetch(`/api/rwa/meta?address=${encodeURIComponent(address as string)}`);
       const json = (await res.json()) as { ok: boolean; data: TokenMeta; error?: string };
       if (!json.ok) throw new Error(json.error ?? "meta failed");
       return json.data;
     },
     enabled: Boolean(address),
     staleTime: 60 * 60 * 1000,
+    gcTime: 24 * 60 * 60 * 1000,
   });
 }
 
@@ -94,7 +99,7 @@ export function useKline(
     queryKey: ["rwa-kline", address, interval, limit],
     queryFn: async (): Promise<KlineRow[]> => {
       const res = await fetch(
-        `/api/rwa/kline?address=${address}&interval=${interval}&limit=${limit}`,
+        `/api/rwa/kline?address=${encodeURIComponent(address as string)}&interval=${encodeURIComponent(interval)}&limit=${encodeURIComponent(String(limit))}`,
       );
       const json = (await res.json()) as { ok: boolean; data: KlineRow[]; error?: string };
       if (!json.ok) throw new Error(json.error ?? "kline failed");
@@ -113,6 +118,7 @@ export function useKline(
  */
 const mcapCache = new Map<string, string | null>();
 const mcapFailed = new Set<string>();
+const mcapInflight = new Set<string>();
 const mcapQueue: string[] = [];
 const mcapListeners = new Set<() => void>();
 let mcapWorkers = 0;
@@ -121,8 +127,16 @@ async function pumpMCaps(): Promise<void> {
   const room = 3 - mcapWorkers;
   for (let i = 0; i < room && mcapQueue.length > 0; i += 1) {
     const addr = mcapQueue.shift();
-    if (!addr || mcapCache.has(addr) || mcapFailed.has(addr)) continue;
+    if (
+      !addr ||
+      mcapCache.has(addr) ||
+      mcapFailed.has(addr) ||
+      mcapInflight.has(addr)
+    ) {
+      continue;
+    }
     mcapWorkers += 1;
+    mcapInflight.add(addr);
     void (async () => {
       try {
         const d = await fetchDynamic(addr);
@@ -130,6 +144,7 @@ async function pumpMCaps(): Promise<void> {
       } catch {
         mcapFailed.add(addr);
       } finally {
+        mcapInflight.delete(addr);
         mcapWorkers -= 1;
         mcapListeners.forEach((l) => l());
         void pumpMCaps();
@@ -146,7 +161,12 @@ export function useMCaps(addresses: string[]): Record<string, string | null> {
     mcapListeners.add(notify);
     let queued = false;
     for (const a of addresses) {
-      if (!mcapCache.has(a) && !mcapFailed.has(a)) {
+      if (
+        !mcapCache.has(a) &&
+        !mcapFailed.has(a) &&
+        !mcapInflight.has(a) &&
+        !mcapQueue.includes(a)
+      ) {
         mcapQueue.push(a);
         queued = true;
       }
@@ -171,6 +191,7 @@ export function useMCaps(addresses: string[]): Record<string, string | null> {
  */
 const h1Cache = new Map<string, number | null>();
 const h1Failed = new Set<string>();
+const h1Inflight = new Set<string>();
 const h1Queue: string[] = [];
 const h1Listeners = new Set<() => void>();
 let h1Workers = 0;
@@ -179,12 +200,20 @@ async function pumpH1(): Promise<void> {
   const room = 4 - h1Workers;
   for (let i = 0; i < room && h1Queue.length > 0; i += 1) {
     const addr = h1Queue.shift();
-    if (!addr || h1Cache.has(addr) || h1Failed.has(addr)) continue;
+    if (
+      !addr ||
+      h1Cache.has(addr) ||
+      h1Failed.has(addr) ||
+      h1Inflight.has(addr)
+    ) {
+      continue;
+    }
     h1Workers += 1;
+    h1Inflight.add(addr);
     void (async () => {
       try {
         const res = await fetch(
-          `/api/rwa/kline?address=${addr}&interval=1h&limit=2`,
+          `/api/rwa/kline?address=${encodeURIComponent(addr)}&interval=1h&limit=2`,
         );
         const json = (await res.json()) as {
           ok: boolean;
@@ -205,6 +234,7 @@ async function pumpH1(): Promise<void> {
       } catch {
         h1Failed.add(addr);
       } finally {
+        h1Inflight.delete(addr);
         h1Workers -= 1;
         h1Listeners.forEach((l) => l());
         void pumpH1();
@@ -221,7 +251,12 @@ export function useH1Changes(addresses: string[]): Record<string, number | null>
     h1Listeners.add(notify);
     let queued = false;
     for (const a of addresses) {
-      if (!h1Cache.has(a) && !h1Failed.has(a)) {
+      if (
+        !h1Cache.has(a) &&
+        !h1Failed.has(a) &&
+        !h1Inflight.has(a) &&
+        !h1Queue.includes(a)
+      ) {
         h1Queue.push(a);
         queued = true;
       }

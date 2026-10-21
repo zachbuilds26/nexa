@@ -1,11 +1,11 @@
 export function fmtUsd(v: number | null | undefined, dp = 2): string {
-  if (v === null || v === undefined || Number.isNaN(v)) return "-";
+  if (v === null || v === undefined || !Number.isFinite(v)) return "-";
   return `$${v.toLocaleString("en-US", { minimumFractionDigits: dp, maximumFractionDigits: dp })}`;
 }
 
 /** Compact USD for stat cards: $1.2T / $606.8M / $500 */
 export function fmtUsdCompact(v: number | null | undefined): string {
-  if (v === null || v === undefined || Number.isNaN(v)) return "-";
+  if (v === null || v === undefined || !Number.isFinite(v)) return "-";
   const abs = Math.abs(v);
   if (abs >= 1e12) return `$${(v / 1e12).toFixed(2)}T`;
   if (abs >= 1e9) return `$${(v / 1e9).toFixed(1)}B`;
@@ -14,18 +14,8 @@ export function fmtUsdCompact(v: number | null | undefined): string {
   return fmtUsd(v, 0);
 }
 
-/** Compact plain number (shares, counts): 119.7M / 10.3K / 500 */
-export function fmtCompactNum(v: number | null | undefined): string {
-  if (v === null || v === undefined || Number.isNaN(v)) return "-";
-  const abs = Math.abs(v);
-  if (abs >= 1e9) return `${(v / 1e9).toFixed(1)}B`;
-  if (abs >= 1e6) return `${(v / 1e6).toFixed(1)}M`;
-  if (abs >= 1e3) return `${(v / 1e3).toFixed(1)}K`;
-  return v.toLocaleString("en-US", { maximumFractionDigits: 2 });
-}
-
 export function fmtSignedPct(v: number | null | undefined, dp = 2): string {
-  if (v === null || v === undefined || Number.isNaN(v)) return "-";
+  if (v === null || v === undefined || !Number.isFinite(v)) return "-";
   const s = v > 0 ? "+" : "";
   return `${s}${v.toFixed(dp)}%`;
 }
@@ -34,16 +24,6 @@ export function fmtSignedPct(v: number | null | undefined, dp = 2): string {
 export function fmtNumTrim(v: number, dp = 2): string {
   const s = v.toFixed(dp);
   return s.includes(".") ? s.replace(/0+$/, "").replace(/\.$/, "") : s;
-}
-
-export function fmtAmount(v: number | null | undefined, dp = 4): string {
-  if (v === null || v === undefined || Number.isNaN(v)) return "-";
-  return v.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: dp });
-}
-
-export function fmtUsdAmountFromUnits(units: bigint, decimals: number): string {
-  const v = Number(units) / 10 ** decimals;
-  return fmtUsd(v);
 }
 
 export function parseAmountToUnits(input: string, decimals: number): bigint {
@@ -73,11 +53,6 @@ export function formatUnits(units: bigint, decimals: number, maxDp = 6): string 
  */
 export function unitsToNumber(units: bigint, decimals: number): number {
   return Number(units) / 10 ** decimals;
-}
-
-export function pctChange(now: number | null | undefined, prev: number | null | undefined): number | null {
-  if (now === null || now === undefined || prev === null || prev === undefined || prev === 0) return null;
-  return ((now - prev) / prev) * 100;
 }
 
 export function minReceived(amount: bigint, slippage: number): bigint {

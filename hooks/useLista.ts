@@ -4,12 +4,13 @@ import { useMemo } from "react";
 import { useReadContracts } from "wagmi";
 import { useQuery } from "@tanstack/react-query";
 import {
+  LISTA_ORACLE_ABI,
   MOOLAH_ADDRESS,
   MOOLAH_VIEW_ABI,
-  MORPHO_ORACLE_ABI,
   borrowSharesToAssets,
   fetchListaStockMarkets,
   listaHealthFactor,
+  oraclePriceRaw,
   type ListaMarket,
   type ListaUserPosition,
 } from "@/lib/lista";
@@ -48,8 +49,15 @@ export function useListaUserPosition(
       },
       {
         address: market.oracle,
-        abi: MORPHO_ORACLE_ABI,
-        functionName: "price" as const,
+        abi: LISTA_ORACLE_ABI,
+        functionName: "peek" as const,
+        args: [market.collateralAddress] as const,
+      },
+      {
+        address: market.oracle,
+        abi: LISTA_ORACLE_ABI,
+        functionName: "peek" as const,
+        args: [market.loanAddress] as const,
       },
     ];
   }, [market, user]);
@@ -65,7 +73,7 @@ export function useListaUserPosition(
 
   const data = useMemo<ListaUserPosition | undefined>(() => {
     if (!market || !read.data) return undefined;
-    const [pos, acct, price] = read.data;
+    const [pos, acct, collPeek, loanPeek] = read.data;
     if (pos.status !== "success" || acct.status !== "success") return undefined;
     const [, borrowShares, collateral] = pos.result as unknown as [
       bigint,
@@ -80,7 +88,12 @@ export function useListaUserPosition(
       bigint,
       number,
     ];
-    const priceRaw = price.status === "success" ? (price.result as bigint) : 0n;
+    const collUsd =
+      collPeek.status === "success" ? (collPeek.result as bigint) : 0n;
+    const loanUsd =
+      loanPeek.status === "success" ? (loanPeek.result as bigint) : 0n;
+    const priceOk = collUsd > 0n && loanUsd > 0n;
+    const priceRaw = priceOk ? oraclePriceRaw(collUsd, loanUsd) : 0n;
     const debtAssets = borrowSharesToAssets(borrowShares, {
       totalSupplyAssets: 0n,
       totalBorrowAssets,
@@ -91,7 +104,11 @@ export function useListaUserPosition(
       borrowShares,
       debtAssets,
       priceRaw,
-      healthFactor: listaHealthFactor(collateral, priceRaw, market.lltv, debtAssets),
+      // A failed oracle read must not render HF 0.00 (which reads as
+      // "about to be liquidate"); null = unknown, shown as "-".
+      healthFactor: priceOk
+        ? listaHealthFactor(collateral, priceRaw, market.lltv, debtAssets)
+        : null,
     };
   }, [market, read.data]);
 
@@ -139,38 +156,53 @@ export function useListaAllPositions(
     return out;
   }, [markets, posRead.data]);
 
-  const detailContracts = useMemo(() => {
-    if (!open.length) return [];
-    const seenOracle = new Set<string>();
+  const detailPlan = useMemo(() => {
     const contracts: {
       address: `0x${string}`;
-      abi: typeof MOOLAH_VIEW_ABI | typeof MORPHO_ORACLE_ABI;
+      abi: typeof MOOLAH_VIEW_ABI | typeof LISTA_ORACLE_ABI;
       functionName: string;
       args?: readonly [`0x${string}`];
     }[] = [];
+    const marketIndex: number[] = [];
+    const pairIndex: { coll: number; loan: number }[] = [];
+    const seenPrice = new Map<string, number>();
     for (const { market } of open) {
+      marketIndex.push(contracts.length);
       contracts.push({
         address: MOOLAH_ADDRESS,
         abi: MOOLAH_VIEW_ABI,
         functionName: "market",
         args: [market.id],
       });
-      if (!seenOracle.has(market.oracle.toLowerCase())) {
-        seenOracle.add(market.oracle.toLowerCase());
-        contracts.push({
-          address: market.oracle,
-          abi: MORPHO_ORACLE_ABI,
-          functionName: "price",
-        });
+      const pair = { coll: -1, loan: -1 };
+      const tokens = [
+        ["coll", market.collateralAddress],
+        ["loan", market.loanAddress],
+      ] as const;
+      for (const [slot, token] of tokens) {
+        const key = `${market.oracle.toLowerCase()}:${token.toLowerCase()}`;
+        let idx = seenPrice.get(key);
+        if (idx === undefined) {
+          idx = contracts.length;
+          seenPrice.set(key, idx);
+          contracts.push({
+            address: market.oracle,
+            abi: LISTA_ORACLE_ABI,
+            functionName: "peek",
+            args: [token],
+          });
+        }
+        pair[slot] = idx;
       }
+      pairIndex.push(pair);
     }
-    return contracts;
+    return { contracts, marketIndex, pairIndex };
   }, [open]);
 
   const detailRead = useReadContracts({
-    contracts: detailContracts,
+    contracts: detailPlan.contracts,
     query: {
-      enabled: detailContracts.length > 0,
+      enabled: detailPlan.contracts.length > 0,
       staleTime: 15_000,
       refetchInterval: 30_000,
     },
@@ -182,18 +214,6 @@ export function useListaAllPositions(
 
   const rows = useMemo(() => {
     if (!open.length) return [];
-    let cursor = 0;
-    const oracleIndex = new Map<string, number>();
-    const marketIndex: number[] = [];
-    for (const { market } of open) {
-      marketIndex.push(cursor);
-      cursor += 1;
-      const key = market.oracle.toLowerCase();
-      if (!oracleIndex.has(key)) {
-        oracleIndex.set(key, cursor);
-        cursor += 1;
-      }
-    }
     if (!detailData) {
       return open.map(({ market, collateral, borrowShares }) => ({
         market,
@@ -205,8 +225,10 @@ export function useListaAllPositions(
       }));
     }
     return open.map(({ market, collateral, borrowShares }, i) => {
-      const acctRes = detailData[marketIndex[i]];
-      const priceRes = detailData[oracleIndex.get(market.oracle.toLowerCase()) ?? -1];
+      const acctRes = detailData[detailPlan.marketIndex[i]];
+      const pair = detailPlan.pairIndex[i];
+      const collRes = detailData[pair.coll];
+      const loanRes = detailData[pair.loan];
       let debtAssets = 0n;
       let healthFactor: number | null = null;
       if (acctRes?.status === "success") {
@@ -223,8 +245,20 @@ export function useListaAllPositions(
           totalBorrowAssets,
           totalBorrowShares,
         });
-        const priceRaw = priceRes?.status === "success" ? (priceRes.result as bigint) : 0n;
-        healthFactor = listaHealthFactor(collateral, priceRaw, market.lltv, debtAssets);
+        const collUsd =
+          collRes?.status === "success" ? (collRes.result as bigint) : 0n;
+        const loanUsd =
+          loanRes?.status === "success" ? (loanRes.result as bigint) : 0n;
+        // Same rule as useListaUserPosition: unread oracle -> HF unknown.
+        healthFactor =
+          collUsd > 0n && loanUsd > 0n
+            ? listaHealthFactor(
+                collateral,
+                oraclePriceRaw(collUsd, loanUsd),
+                market.lltv,
+                debtAssets,
+              )
+            : null;
       }
       return {
         market,
@@ -235,7 +269,7 @@ export function useListaAllPositions(
         ready: acctRes?.status === "success",
       };
     });
-  }, [open, detailData]);
+  }, [open, detailData, detailPlan]);
 
   return {
     rows,

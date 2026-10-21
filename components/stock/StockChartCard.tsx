@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import dynamic from "next/dynamic";
 import { Check, Copy, ExternalLink } from "lucide-react";
 import type { Stock } from "@/lib/rwa";
 import { useDynamic, useKline, useMarketStatus, useMeta } from "@/hooks/useRwa";
@@ -10,32 +11,48 @@ import { Freshness } from "@/components/ui/Freshness";
 import { TokenImage } from "@/components/ui/TokenImage";
 import { MarketBadge } from "@/components/trade/MarketBadge";
 import { prettyStockName } from "./StockHeaderCard";
-import { StockChart } from "./StockChart";
 
-export const RANGES = [
+// lightweight-charts is the heaviest client dependency and is not needed on
+// first paint of /trade (default panel is Swap) - load it on demand.
+function ChartSkeleton() {
+  return (
+    <div
+      className="shimmer flex h-full w-full items-center justify-center rounded bg-fill"
+      aria-hidden
+    >
+      {/* Light watermark in the skeleton's grey family - not brand teal, not black. */}
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src="/nexa-logo.png" alt="" className="h-9 w-auto brightness-0 invert opacity-[0.06]" />
+    </div>
+  );
+}
+
+const StockChart = dynamic(
+  () => import("./StockChart").then((m) => m.StockChart),
+  {
+    ssr: false,
+    loading: () => <ChartSkeleton />,
+  },
+);
+
+const RANGES = [
   {
     key: "24h",
     label: "24H",
     interval: "1h",
     limit: 24,
-    fromLabel: "24h ago",
-    candleNote: "hourly candles",
   },
   {
     key: "7d",
     label: "7D",
     interval: "4h",
     limit: 42,
-    fromLabel: "7d ago",
-    candleNote: "4-hour candles",
   },
   {
     key: "30d",
     label: "30D",
     interval: "1d",
     limit: 30,
-    fromLabel: "30d ago",
-    candleNote: "daily candles",
   },
 ] as const;
 
@@ -93,8 +110,13 @@ export function StockChartCard({
   const onchain = d?.onchainPrice ? Number(d.onchainPrice) : null;
   const ref = d?.referencePrice ? Number(d.referencePrice) : null;
   const chg24 = d?.priceChangePct24h ? Number(d.priceChangePct24h) : null;
+  // Guard the denominator: a -100% change makes (1 + chg/100) zero, which
+  // previously rendered "$-Infinity" via the unguarded division below.
+  const prevDenom = chg24 !== null ? 1 + chg24 / 100 : null;
   const prev =
-    onchain !== null && chg24 !== null ? onchain / (1 + chg24 / 100) : null;
+    onchain !== null && prevDenom !== null && prevDenom > 0
+      ? onchain / prevDenom
+      : null;
   const absChg24 = onchain !== null && prev !== null ? onchain - prev : null;
 
   // The header change follows the selected range: 24h keeps the live feed
@@ -113,9 +135,6 @@ export function StockChartCard({
 
   const spread =
     ref !== null && onchain !== null && ref !== 0 ? ((onchain - ref) / ref) * 100 : null;
-  const resumes = status.data?.nextOpen
-    ? new Date(status.data.nextOpen).toUTCString().slice(17, 22)
-    : "soon";
 
   const dynFailed = dynamic.isError;
 
@@ -220,13 +239,14 @@ export function StockChartCard({
                 </button>
               </span>
             ) : ref === null ? (
-              <>
-                NASDAQ closed · resumes{" "}
-                <span className="tnum text-fg">{resumes} UTC</span>
-              </>
+              status.data?.openState === false ? (
+                <>NASDAQ closed · reference frozen</>
+              ) : (
+                <>Reference price unavailable</>
+              )
             ) : (
               <>
-                Past 24 hours · vs NASDAQ{" "}
+                On-chain vs NASDAQ{" "}
                 <span className="tnum text-fg">{fmtUsd(ref)}</span>
                 {spread !== null ? (
                   <span
@@ -269,15 +289,19 @@ export function StockChartCard({
         </div>
       </div>
 
-      <div className="mt-4">
-        <StockChart
-          candles={candles}
-          loading={kline.isLoading}
-          error={kline.isError}
-          onRetry={() => void kline.refetch()}
-          timeVisible={range !== "30d"}
-          height={chartHeight}
-        />
+      <div className="mt-4" style={{ height: chartHeight }}>
+        {kline.isLoading ? (
+          <ChartSkeleton />
+        ) : (
+          <StockChart
+            candles={candles}
+            loading={kline.isLoading}
+            error={kline.isError}
+            onRetry={() => void kline.refetch()}
+            timeVisible={range !== "30d"}
+            height={chartHeight}
+          />
+        )}
       </div>
     </div>
   );

@@ -22,7 +22,7 @@ export default function NotFound() {
           Back home
         </Link>
         <Link
-          href="/trade"
+          href="/trade/swap"
           className="inline-flex h-11 items-center rounded-xl bg-accent px-6 text-sm font-semibold text-ink scanlines transition-colors hover:bg-accent-hover"
         >
           Start trading

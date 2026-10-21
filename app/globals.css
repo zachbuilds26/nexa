@@ -9,8 +9,8 @@
   --color-surface-hover: #232328;
   --color-fg: #e9e9ec;
   --color-dim: #bfbfbf;
-  --color-accent: #86dc57;
-  --color-accent-hover: #9ce676;
+  --color-accent: #34eccc;
+  --color-accent-hover: #4ff3d6;
   --color-btn-grey: #262626;
 --color-up: #34d399;
 --color-down: #fb7185;
@@ -101,13 +101,59 @@ body {
     3px 100%;
 }
 
-@keyframes hot-tape {
-  from {
-    transform: translateX(0);
-  }
-  to {
-    transform: translateX(-50%);
-  }
+/* Borrow LTV slider: thin track, accent thumb, no browser chrome */
+.ltv-slider-wrapper {
+  padding: 4px 0;
+}
+
+.ltv-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--color-fill-strong);
+  outline: none;
+  cursor: pointer;
+}
+
+.ltv-slider:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.ltv-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  background: var(--color-accent);
+  border: 2px solid var(--color-ink);
+  box-shadow: 0 0 0 1px var(--color-accent);
+  cursor: pointer;
+  transition: background 0.15s ease, box-shadow 0.15s ease;
+}
+
+.ltv-slider::-webkit-slider-thumb:hover {
+  background: var(--color-accent-hover);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent) 25%, transparent);
+}
+
+.ltv-slider::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  background: var(--color-accent);
+  border: 2px solid var(--color-ink);
+  box-shadow: 0 0 0 1px var(--color-accent);
+  cursor: pointer;
+}
+
+.ltv-slider::-moz-range-track {
+  height: 4px;
+  border-radius: 999px;
+  background: var(--color-fill-strong);
 }
 
 @keyframes float {
@@ -118,6 +164,82 @@ body {
   50% {
     transform: translateY(-16px);
   }
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.shimmer {
+  background-image: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(233, 233, 236, 0.08) 50%,
+    transparent 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s linear infinite;
+}
+
+/* Click feedback for the header/trade toolbar icons. */
+@keyframes icon-pop {
+  0% {
+    transform: scale(1);
+  }
+  35% {
+    transform: scale(0.8);
+  }
+  70% {
+    transform: scale(1.12);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+.icon-pop {
+  animation: icon-pop 0.4s ease;
+}
+
+@keyframes bell-ring {
+  0%,
+  100% {
+    transform: rotate(0);
+  }
+  20% {
+    transform: rotate(14deg);
+  }
+  40% {
+    transform: rotate(-11deg);
+  }
+  60% {
+    transform: rotate(7deg);
+  }
+  80% {
+    transform: rotate(-4deg);
+  }
+}
+
+.bell-ring {
+  animation: bell-ring 0.5s ease;
+}
+
+@keyframes gear-spin {
+  from {
+    transform: rotate(0);
+  }
+  to {
+    transform: rotate(180deg);
+  }
+}
+
+.gear-spin {
+  animation: gear-spin 0.4s ease;
 }
 
 @keyframes quote-dots {

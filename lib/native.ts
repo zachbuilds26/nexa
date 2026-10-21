@@ -200,8 +200,16 @@ export async function fetchNativePoolConfig(): Promise<NativePoolConfig> {
       withdrawPendingSeconds: a.withdraw_pending_seconds,
       instantFeeBps: a.instant_fee_bps,
       projectedApy:
-        a.projected_apy === undefined ? null : Number(a.projected_apy),
-      tvlAtoms: BigInt(a.realtime_tvl_amount ?? "0"),
+        typeof a.projected_apy === "string" &&
+        a.projected_apy.trim() !== "" &&
+        Number.isFinite(Number(a.projected_apy))
+          ? Number(a.projected_apy)
+          : null,
+      tvlAtoms:
+        typeof a.realtime_tvl_amount === "string" &&
+        /^\d+$/.test(a.realtime_tvl_amount)
+          ? BigInt(a.realtime_tvl_amount)
+          : 0n,
     })),
   };
 }
@@ -293,30 +301,6 @@ export function floorToGrid8(amount: bigint, tokenDecimals: number): bigint {
   return amount - (amount % scale);
 }
 
-export type NativeDepositRow = {
-  id: number;
-  operationId: string;
-  depositType: string;
-  assetId: number;
-  amount: string;
-  status: "credited" | "rejected" | string;
-  srcTxHash?: string;
-  srcChainId?: number;
-};
-
-/** Recent deposits for a user - poll for the credit after submitting. */
-export async function fetchNativePoolDeposits(
-  user: Address,
-  limit = 20,
-): Promise<NativeDepositRow[]> {
-  const data = await poolCall<{ items: NativeDepositRow[] }>({
-    type: "deposits",
-    user_address: user,
-    limit,
-  });
-  return data.items ?? [];
-}
-
 export type NativeAccountBalance = {
   assetId: number;
   /** Available and earning, in balance_decimals atoms. */
@@ -344,14 +328,21 @@ export async function fetchNativeAccount(
       active_withdraw_operation_id: string;
     }>;
   }>({ type: "account", user_address: user });
+  // A single malformed field (null/""/non-numeric) previously threw inside
+  // BigInt() and killed the whole account fetch; treat unreadable atoms as 0.
+  const atoms = (v: unknown): bigint => {
+    if (typeof v === "string" && /^\d+$/.test(v)) return BigInt(v);
+    if (typeof v === "number" && Number.isInteger(v) && v >= 0) return BigInt(v);
+    return 0n;
+  };
   return {
     balances: (data.balances ?? []).map((b) => ({
       assetId: b.asset_id,
-      earnBalance: BigInt(b.earn_balance),
-      inQueueBalance: BigInt(b.in_queue_balance),
-      withdrawLockedBalance: BigInt(b.withdraw_locked_balance),
-      lifetimeYield: BigInt(b.lifetime_yield),
-      lifetimeDeposit: BigInt(b.lifetime_deposit),
+      earnBalance: atoms(b.earn_balance),
+      inQueueBalance: atoms(b.in_queue_balance),
+      withdrawLockedBalance: atoms(b.withdraw_locked_balance),
+      lifetimeYield: atoms(b.lifetime_yield),
+      lifetimeDeposit: atoms(b.lifetime_deposit),
       activeWithdrawOperationId: b.active_withdraw_operation_id,
     })),
   };

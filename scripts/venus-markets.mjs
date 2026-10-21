@@ -4,7 +4,7 @@ import { writeFileSync } from "node:fs";
 
 const RPC = process.env.BSC_RPC ?? "https://bsc.publicnode.com";
 const COMPTROLLER = "0xfD36E2c2a6789Db23113685031d7F16329158384";
-const UNIVERSE_URL = process.env.UNIVERSE_URL ?? "http://localhost:3001/api/rwa/universe";
+const UNIVERSE_URL = process.env.UNIVERSE_URL ?? "http://localhost:3000/api/rwa/universe";
 const DEAD = "0x000000000000000000000000000000000000dEaD";
 
 const comptrollerAbi = parseAbi([
@@ -161,7 +161,7 @@ lines.push(`- Comptroller (Unitroller): \`${COMPTROLLER}\``);
 lines.push(`- Oracle: \`${oracle}\``);
 lines.push(`- Total markets: **${rows.length}**`);
 lines.push(
-  `- Eligible bStock markets (underlying ∈ 87-token universe): **${eligible.length}**`,
+  `- Eligible bStock markets (underlying ∈ ${universe.length}-token universe): **${eligible.length}**`,
 );
 lines.push(`- Listed: ${rows.filter((r) => r.isListed).length} / ${rows.length}`);
 lines.push(
@@ -197,7 +197,7 @@ const missing = universe.filter(
 lines.push(
   missing.length
     ? missing.map((s) => `- ${s.ticker} \`${s.contractAddress}\``).join("\n")
-    : "(none - all 87 listed)",
+    : `(none - all ${universe.length} listed)`,
 );
 lines.push("");
 

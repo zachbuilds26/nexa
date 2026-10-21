@@ -4,7 +4,7 @@ const BAPI_HEADERS = {
   "User-Agent": "nexa/0.1",
 };
 
-export type KlineRow = [number, number, number, number, number, number, number];
+type KlineRow = [number, number, number, number, number, number, number];
 
 const cache = new Map<string, { value: unknown; expires: number }>();
 
@@ -17,7 +17,11 @@ export async function getKline(
   const hit = cache.get(path);
   if (hit && hit.expires > Date.now()) return hit.value as KlineRow[];
 
-  const res = await fetch(`${BINANCE}${path}`, { headers: BAPI_HEADERS, cache: "no-store" });
+  const res = await fetch(`${BINANCE}${path}`, {
+    headers: BAPI_HEADERS,
+    cache: "no-store",
+    signal: AbortSignal.timeout(10_000),
+  });
   if (!res.ok) throw new Error(`bapi ${res.status} for kline`);
   const json = (await res.json()) as {
     code: string;

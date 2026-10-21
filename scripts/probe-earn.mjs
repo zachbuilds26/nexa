@@ -30,7 +30,7 @@ for (const fn of ["supplyRatePerBlock", "reserveFactorMantissa", "borrowRatePerB
   }
 }
 
-const universeRes = await fetch("http://localhost:3001/api/rwa/universe");
+const universeRes = await fetch(process.env.UNIVERSE_URL ?? "http://localhost:3000/api/rwa/universe");
 const universe = (await universeRes.json()).data;
 const bstocks = universe.slice(0, 20).map((s) => ({ symbol: s.symbol, addr: s.contractAddress }));
 console.log(`\n== Pancake pairs (first ${bstocks.length} of ${universe.length} bStocks) vs USDT ==`);

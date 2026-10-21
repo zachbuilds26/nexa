@@ -8,7 +8,8 @@ import {
   useConnection,
   useReadContracts,
 } from "wagmi";
-import { ArrowUpRight, RotateCcw, TriangleAlert, WalletCards } from "lucide-react";
+import { ArrowUpRight, RotateCcw, TriangleAlert } from "lucide-react";
+import { WalletFilled } from "@/components/ui/WalletFilled";
 import { Card } from "@/components/ui/Card";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { TokenImage } from "@/components/ui/TokenImage";
@@ -16,6 +17,7 @@ import { EmptyBlock, ErrorBlock } from "@/components/ui/StateBlocks";
 import { ContextStat, InfoRow } from "@/components/ui/Stats";
 import { HealthMeter } from "@/components/borrow/HealthMeter";
 import { EarnDepositsCard } from "@/components/earn/EarnDepositsCard";
+import { DotsBackdrop } from "@/components/ui/DotsBackdrop";
 import { ERC20_ABI, USDT_BSC, USDC_BSC, WBNB_BSC } from "@/lib/erc20";
 import { fetchBnbUsdPrice } from "@/lib/native";
 import { fmtUsd, formatUnits, unitsToNumber } from "@/lib/format";
@@ -23,7 +25,6 @@ import { fetchDynamic, useUniverse } from "@/hooks/useRwa";
 import { useVenusMarkets, useVenusPosition } from "@/hooks/useVenus";
 import { useEarnData } from "@/hooks/useEarn";
 
-/** BNB USD price from Native's markPrices oracle (asset_id 4, 1e-8 atoms). */
 type WalletRow = {
   key: string;
   address: string | undefined;
@@ -59,8 +60,10 @@ export function PortfolioView() {
     contracts: balanceContracts,
     query: {
       enabled: balanceContracts.length > 0,
-      staleTime: 10_000,
-      refetchInterval: isConnected ? 15_000 : false,
+      // ~90 tokens in one multicall - 15s/30s keeps the page fresh without
+      // re-running the full-universe read every 15s.
+      staleTime: 15_000,
+      refetchInterval: isConnected ? 30_000 : false,
     },
   });
 
@@ -111,6 +114,7 @@ export function PortfolioView() {
       queryKey: ["rwa-dynamic", addr] as const,
       queryFn: () => fetchDynamic(addr),
       staleTime: 15_000,
+      refetchInterval: 30_000,
     })),
   });
   const stockPrices = useMemo(() => {
@@ -175,14 +179,27 @@ export function PortfolioView() {
   const earnUsd = earn.earnUsd;
   const netWorth = walletUsd + suppliedUsd - debtUsd + earnUsd;
 
-  const walletFailed = balanceRead.isError || universe.isError;
+  const hasBnb = typeof bnb.data?.value === "bigint" && bnb.data.value > 0n;
+  const pricesLoading =
+    priceQueries.some((q) => q.isLoading) || (hasBnb && bnbPriceQ.isLoading);
+  const pricesFailed =
+    priceQueries.some((q) => q.isError) || (hasBnb && bnbPriceQ.isError);
+
+  const walletFailed =
+    balanceRead.isError || universe.isError || bnb.isError || pricesFailed;
   const borrowFailed = venus.isError || position.isError;
   const earnFailed = earn.hasError;
   const anyFailed = walletFailed || borrowFailed || earnFailed;
+  const hasUnpriced =
+    isConnected &&
+    (walletRows.some((r) => r.priceUsd === null) || earn.hasUnpriced);
 
   function retryWallet() {
     void balanceRead.refetch();
     void universe.refetch();
+    void bnb.refetch();
+    priceQueries.forEach((q) => void q.refetch());
+    void bnbPriceQ.refetch();
   }
   function retryBorrow() {
     void venus.refetch();
@@ -191,16 +208,25 @@ export function PortfolioView() {
 
   const loadingAny =
     Boolean(isConnected) &&
-    (balanceRead.isLoading || universe.isLoading || position.isLoading || earn.isLoading);
+    (balanceRead.isLoading ||
+      universe.isLoading ||
+      bnb.isLoading ||
+      position.isLoading ||
+      earn.isLoading ||
+      pricesLoading);
   const stat = (v: number, failed = false) =>
     isConnected && !loadingAny && !failed ? fmtUsd(v) : "-";
 
-  const walletLoading = isConnected && (universe.isLoading || balanceRead.isLoading);
+  const walletLoading =
+    isConnected &&
+    (universe.isLoading || balanceRead.isLoading || bnb.isLoading || pricesLoading);
   const borrowLoading = isConnected && (venus.isLoading || position.isLoading);
   const hasBorrow = Boolean(pos && (pos.supplied.length > 0 || pos.borrowed.length > 0));
 
   return (
-    <div className="mx-auto max-w-[1200px] px-4 py-6 lg:px-8">
+    <div className="relative">
+      <DotsBackdrop />
+      <div className="relative mx-auto max-w-[1200px] px-4 py-6 lg:px-8">
       <div className="mb-5">
         <div>
           <h1 className="text-2xl font-semibold text-fg">Portfolio</h1>
@@ -235,11 +261,11 @@ export function PortfolioView() {
             tip="Value currently deposited in the earn pools."
           />
         </div>
-        {isConnected && loadingAny ? null : isConnected && anyFailed ? (
+        {isConnected && loadingAny ? null : isConnected && (anyFailed || hasUnpriced) ? (
           <div className="mt-3 flex items-center justify-between gap-3 border-t border-line pt-3 text-xs text-warn">
             <span>
-                Some balances failed to load. Totals above show only what
-                answered.
+                Some balances or prices are unavailable. Totals above show
+                only what answered.
             </span>
             <button
               type="button"
@@ -279,7 +305,7 @@ export function PortfolioView() {
             </div>
           ) : walletFailed ? (
             <ErrorBlock
-              message="Failed to read token balances."
+              message="Failed to read token balances or prices."
               onRetry={retryWallet}
             />
           ) : walletRows.length > 0 ? (
@@ -333,7 +359,7 @@ export function PortfolioView() {
           ) : (
             <div className="px-4 py-8 text-center text-sm text-dim">
               No token balances yet.{" "}
-              <Link href="/trade" className="text-accent hover:underline">
+              <Link href="/trade/swap" className="text-accent hover:underline">
                 Trade a bStock
               </Link>{" "}
               to get started.
@@ -346,7 +372,7 @@ export function PortfolioView() {
           <div className="mb-3 flex items-center justify-between">
             <h2 className="text-sm font-semibold text-fg">Borrow position</h2>
             <Link
-              href="/borrow"
+              href="/borrow/markets"
               className="flex items-center gap-1 text-xs text-accent hover:underline"
             >
               Manage
@@ -415,7 +441,7 @@ export function PortfolioView() {
           ) : (
             <div className="px-4 py-8 text-center text-sm text-dim">
                 No borrow position.{" "}
-              <Link href="/borrow" className="text-accent hover:underline">
+              <Link href="/borrow/markets" className="text-accent hover:underline">
                 supply a bStock as collateral
               </Link>
               .
@@ -428,13 +454,14 @@ export function PortfolioView() {
 
       {!isConnected ? (
         <div className="mt-6 flex items-start gap-2 rounded-xl border border-line bg-fill p-4 text-xs leading-relaxed text-dim">
-          <WalletCards className="mt-0.5 h-4 w-4 shrink-0" strokeWidth={1.7} />
+          <WalletFilled className="mt-0.5 h-5 w-5 shrink-0" />
           <span>
             Everything above reads straight from the chain for your connected
               wallet. Nexa keeps no account and no balance ledger.
           </span>
         </div>
       ) : null}
+      </div>
     </div>
   );
 }

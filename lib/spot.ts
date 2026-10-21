@@ -18,15 +18,19 @@ type SpotRow = {
 
 const TTL = 15_000;
 const cache = new Map<string, { value: Record<string, SpotTicker>; expires: number }>();
-let inflight: Promise<Record<string, SpotTicker>> | null = null;
+// Per-key dedupe: a single shared promise could return ANOTHER symbol set's
+// data to this key's caller once the universe (and key) changed mid-flight.
+const inflight = new Map<string, Promise<Record<string, SpotTicker>>>();
 
 async function fetchChunk(symbols: string[]): Promise<SpotRow[]> {
   const url = `${SPOT}/api/v3/ticker/24hr?symbols=${encodeURIComponent(JSON.stringify(symbols))}`;
-  const res = await fetch(url, { cache: "no-store" });
+  const res = await fetch(url, { cache: "no-store", signal: AbortSignal.timeout(10_000) });
   const json: unknown = await res.json();
-  if (!res.ok || !Array.isArray(json)) {
-    if (symbols.length === 1) return []; // single unknown pair - drop it, keep the rest
-    if (symbols.length > 1) {
+  if (!res.ok) {
+    // Only a bad symbol is pair-specific. Splitting on 429/5xx would multiply
+    // the failed requests instead of backing off.
+    if (res.status === 400 && symbols.length === 1) return [];
+    if (res.status === 400 && symbols.length > 1) {
       const mid = Math.ceil(symbols.length / 2);
       return [
         ...(await fetchChunk(symbols.slice(0, mid))),
@@ -35,6 +39,7 @@ async function fetchChunk(symbols: string[]): Promise<SpotRow[]> {
     }
     throw new Error(`spot ${res.status}`);
   }
+  if (!Array.isArray(json)) throw new Error("spot malformed response");
   return json as SpotRow[];
 }
 
@@ -57,6 +62,23 @@ async function refresh(
   return out;
 }
 
+function startRefresh(
+  key: string,
+  symbols: string[],
+): Promise<Record<string, SpotTicker>> {
+  const existing = inflight.get(key);
+  if (existing) return existing;
+  const p = refresh(key, symbols).finally(() => {
+    inflight.delete(key);
+  });
+  inflight.set(key, p);
+  // Stale-path callers never await this promise - keep rejection handled.
+  void p.catch(() => {
+    /* keep serving stale until a refresh succeeds */
+  });
+  return p;
+}
+
 /**
  * Batched 24h tickers for every bStock spot pair - ONE upstream request for
  * the whole list. Stale-while-revalidate: expired hits serve immediately and
@@ -71,17 +93,14 @@ export async function getSpotTickers(
   const now = Date.now();
 
   if (hit && hit.expires > now) return hit.value;
-  if (inflight) return inflight;
+
+  const pending = inflight.get(key);
+  if (pending) return pending;
 
   if (hit) {
-    void refresh(key, symbols).catch(() => {
-      /* keep serving stale until a refresh succeeds */
-    });
+    void startRefresh(key, symbols);
     return hit.value;
   }
 
-  inflight = refresh(key, symbols).finally(() => {
-    inflight = null;
-  });
-  return inflight;
+  return startRefresh(key, symbols);
 }

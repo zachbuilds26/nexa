@@ -47,10 +47,22 @@ next-env.d.ts
 !.env.local.example
 
 # screenshots & QA captures - never ship
-og-check.png
+*-check.png
+*-mobile.png
+*-positions.png
+*-deposits.png
 /docs/SCREENSHOTS/
 public/*-preview.png
 public/trade-card.png
 
-.vercel
-.env*
+# admin app - separate Next.js project (admin/)
+/admin/node_modules/
+/admin/.next/
+/admin/data/
+/admin/install.log
+
+# shared activity log + site data
+/data/
+
+# private planning docs
+/BUILD_PLAN.md

@@ -237,8 +237,6 @@ export type VenusMarket = {
   blocksPerYear: number;
 };
 
-const DENOM = 10n ** 36n;
-
 /**
  * Convert vToken units (8 decimals) to underlying units.
  * Venus/Compound: underlying = vTokens × rate / 1e18 - verified against
@@ -252,15 +250,6 @@ export function vTokensToUnderlying(vTokens: bigint, rate: bigint): bigint {
 export function underlyingToVTokens(amount: bigint, rate: bigint): bigint {
   if (rate === 0n) return 0n;
   return (amount * 10n ** 18n + rate - 1n) / rate;
-}
-
-/**
- * Venus oracle scaling: getUnderlyingPrice returns USD price scaled by 1e(36 - underlyingDecimals)
- * (the classic Compound/Venus gotcha - NOT 1e18). USD value of `amount` units:
- *   amount × priceRaw / 1e36
- */
-export function usdValue(amount: bigint, priceRaw: bigint): number {
-  return Number((amount * priceRaw) / DENOM);
 }
 
 /** Price raw → human USD, e.g. 1e(36-18) scale for 18-decimals underlyings. */
@@ -302,23 +291,6 @@ export function marketSizeUsd(m: VenusMarket): number | null {
     10 ** m.underlyingDecimals;
   if (!Number.isFinite(units)) return null;
   return units * m.priceUsd;
-}
-
-/** Total borrowed underlying at oracle price, in USD. */
-export function borrowedUsd(m: VenusMarket): number | null {
-  if (!m.priceUsd || m.priceUsd <= 0) return null;
-  const units = Number(m.totalBorrows) / 10 ** m.underlyingDecimals;
-  if (!Number.isFinite(units)) return null;
-  return units * m.priceUsd;
-}
-
-/** Simple APR (not compounded): borrowRatePerBlock × blocksPerYear, as a fraction. */
-export function borrowApr(m: VenusMarket | undefined): number | null {
-  if (!m || m.blocksPerYear <= 0) return null;
-  const perBlock = Number(m.borrowRatePerBlock) / 1e18;
-  if (!Number.isFinite(perBlock)) return null;
-  const apr = perBlock * m.blocksPerYear;
-  return Number.isFinite(apr) ? apr : null;
 }
 
 /**
@@ -561,7 +533,7 @@ export type VenusPosition = {
  *       CF-weighted collateral = borrowUsd + liquidity − shortfall
  *       HF = CF-weighted collateral / borrowUsd
  *
- *   → healthy (shortfall = 0): HF = (borrowUsd + liquidity) / borrowUsd   [the plan formula]
+ *   → healthy (shortfall = 0): HF = (borrowUsd + liquidity) / borrowUsd
  *   → underwater (liquidity = 0, shortfall > 0): HF < 1
  *   → no borrow: HF = null (display "-")
  */
@@ -703,22 +675,6 @@ export async function checkVenusAction(
   } catch {
     return null;
   }
-}
-
-/**
- * Max additional borrow for a target LTV (default 20% per plan §6.4).
- * CF-weighted collateral = borrowUsd + liquidity − shortfall (see healthFactorFrom).
- * additional = CF-weighted × targetLtv − borrowUsd, capped by remaining liquidity.
- */
-export function maxAdditionalBorrowUsd(
-  borrowUsd: number,
-  liquidityUsd: number,
-  shortfallUsd: number,
-  targetLtv: number,
-): number {
-  const cfCollateral = borrowUsd + liquidityUsd - shortfallUsd;
-  const targetTotal = cfCollateral * targetLtv;
-  return Math.max(0, Math.min(targetTotal - borrowUsd, liquidityUsd));
 }
 
 const ERC20_META_ABI = [
