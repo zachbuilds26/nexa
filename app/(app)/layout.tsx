@@ -20,11 +20,8 @@ function HeaderFallback() {
 
 function MobileNavFallback() {
   return (
-    <div
-      className="fixed inset-x-0 bottom-0 z-50 border-t border-line bg-surface-3 md:hidden"
-      aria-hidden
-    >
-      <div className="grid h-16 grid-cols-5 place-items-center">
+    <div className="fixed inset-x-0 bottom-0 z-50 px-3 pb-3 md:hidden" aria-hidden>
+      <div className="mx-auto grid h-14 max-w-[440px] grid-cols-5 place-items-center rounded-full border border-line bg-surface-3 px-1.5 py-1.5">
         <Skeleton className="h-5 w-5 rounded-full" />
         <Skeleton className="h-5 w-5 rounded-full" />
         <Skeleton className="h-5 w-5 rounded-full" />
@@ -41,7 +38,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       <Suspense fallback={<HeaderFallback />}>
         <Header />
       </Suspense>
-      <main className="flex-1 pb-16 pt-14 md:pb-0 lg:pt-16">
+      <main className="flex-1 pb-20 pt-14 md:pb-0 lg:pt-16">
         <MaintenanceBanner />
         <WrongNetworkBanner />
         {children}
