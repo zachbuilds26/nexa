@@ -32,10 +32,13 @@ export function MobileNav() {
                 key={item.href}
                 href={item.href}
                 aria-current={active ? "page" : undefined}
-                className={`flex min-h-11 flex-col items-center justify-center gap-1 rounded-full px-1.5 py-2 transition-colors ${
-                  active ? "bg-fill-strong text-fg" : "text-dim hover:text-fg"
+                className={`relative flex min-h-11 flex-col items-center justify-center gap-1 rounded-full px-1.5 py-2 transition-colors ${
+                  active ? "text-accent" : "text-dim hover:text-fg"
                 }`}
               >
+                {active ? (
+                  <span className="absolute left-1/2 -top-2 h-1 w-12 -translate-x-1/2 rounded-full bg-accent" />
+                ) : null}
                 <Icon className="h-5 w-5" strokeWidth={1.7} />
                 <span className="text-[11px] leading-none">{item.label}</span>
               </Link>
