@@ -37,7 +37,7 @@ export function MobileNav() {
                 }`}
               >
                 {active ? (
-                  <span className="absolute left-1/2 -top-2 h-1 w-12 -translate-x-1/2 rounded-full bg-accent" />
+                  <span className="absolute left-1/2 -top-1.5 h-[1.7px] w-12 -translate-x-1/2 rounded-full bg-accent" />
                 ) : null}
                 <Icon className="h-5 w-5" strokeWidth={1.7} />
                 <span className="text-[11px] leading-none">{item.label}</span>
